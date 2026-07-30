@@ -1,6 +1,6 @@
 import Dexie from 'dexie';
 
-export const db = new Dexie('safepath_offline');
+export const db = new Dexie('idoma-lifeline_offline');
 
 db.version(1).stores({
   resources: 'id, type, name, status, lat, lng',

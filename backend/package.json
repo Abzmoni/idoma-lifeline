@@ -1,7 +1,7 @@
 {
-  "name": "safepath-backend",
+  "name": "idoma-lifeline-backend",
   "version": "1.0.0",
-  "description": "Backend API for SafePath Emergency Resource Mapping System",
+  "description": "Backend API for Idoma Lifeline Emergency Resource Mapping System",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

@@ -10,7 +10,7 @@ const { seedDatabase } = require('./seed');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const JWT_SECRET = process.env.JWT_SECRET || 'safepath_super_secret_key_12345';
+const JWT_SECRET = process.env.JWT_SECRET || 'idoma-lifeline_super_secret_key_12345';
 
 app.use(cors());
 app.use(express.json());
@@ -431,7 +431,7 @@ app.post('/api/sms/ussd', async (req, res) => {
 
     if (parts.length === 0) {
       // Main Menu
-      response = `CON Welcome to SafePath\n1. Find nearest resource\n2. Report a resource or hazard`;
+      response = `CON Welcome to Idoma Lifeline\n1. Find nearest resource\n2. Report a resource or hazard`;
     } else if (parts[0] === '1') {
       // Find Resource Sub-Menu
       if (parts.length === 1) {

@@ -1,7 +1,7 @@
 {
-  "name": "safepath-root",
+  "name": "idoma-lifeline-root",
   "version": "1.0.0",
-  "description": "Root workspace configuration for SafePath Emergency Mapping",
+  "description": "Root workspace configuration for Idoma Lifeline Emergency Mapping",
   "scripts": {
     "install:all": "npm install --prefix backend && npm install --prefix frontend",
     "backend": "npm run start --prefix backend",

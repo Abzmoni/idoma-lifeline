@@ -154,12 +154,12 @@ export default function MapPage() {
 
     window.addEventListener('online', goOnline);
     window.addEventListener('offline', goOffline);
-    window.addEventListener('safepath_synced', onSynced);
+    window.addEventListener('idoma-lifeline_synced', onSynced);
 
     return () => {
       window.removeEventListener('online', goOnline);
       window.removeEventListener('offline', goOffline);
-      window.removeEventListener('safepath_synced', onSynced);
+      window.removeEventListener('idoma-lifeline_synced', onSynced);
     };
   }, []);
 
@@ -530,7 +530,7 @@ export default function MapPage() {
       <header className="fixed top-0 left-0 w-full z-50 flex justify-between items-center px-margin-mobile md:px-margin-desktop h-touch-target bg-surface border-b border-outline-variant">
         <div className="flex items-center space-x-2">
           <span className="material-symbols-outlined text-primary" style={{ fontVariationSettings: "'FILL' 1" }}>signal_cellular_alt</span>
-          <h1 className="font-headline-md text-headline-md font-bold text-primary uppercase tracking-tight">SafePath</h1>
+          <h1 className="font-headline-md text-headline-md font-bold text-primary uppercase tracking-tight">Idoma Lifeline</h1>
         </div>
         <div className="flex items-center space-x-3">
           {/* Online/Offline Status Banner */}

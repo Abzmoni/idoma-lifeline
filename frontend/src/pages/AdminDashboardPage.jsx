@@ -333,7 +333,7 @@ export default function AdminDashboardPage() {
       <header className="flex justify-between items-center px-6 h-touch-target bg-white border-b border-outline">
         <div className="flex items-center space-x-3">
           <span className="material-symbols-outlined text-primary text-2xl" style={{ fontVariationSettings: "'FILL' 1" }}>signal_cellular_alt</span>
-          <h1 className="font-headline-sm text-headline-sm font-bold text-ink uppercase tracking-tight">SafePath Ops Console</h1>
+          <h1 className="font-headline-sm text-headline-sm font-bold text-ink uppercase tracking-tight">Idoma Lifeline Ops Console</h1>
         </div>
         
         <div className="flex items-center space-x-4">

@@ -15,7 +15,7 @@ if (isPostgres) {
   });
 } else {
   console.log('Database config: Using SQLite (Local fallback)');
-  const dbPath = path.join(__dirname, 'safepath.db');
+  const dbPath = path.join(__dirname, 'idoma-lifeline.db');
   sqliteDb = new sqlite3.Database(dbPath);
 }
 

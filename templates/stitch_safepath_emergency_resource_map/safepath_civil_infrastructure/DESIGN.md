@@ -1,5 +1,5 @@
 ---
-name: SafePath Civil Infrastructure
+name: Idoma Lifeline Civil Infrastructure
 colors:
   surface: '#fff8f6'
   surface-dim: '#eed5cb'

@@ -1,5 +1,5 @@
-const CACHE_NAME = 'safepath-cache-v1';
-const TILES_CACHE_NAME = 'safepath-map-tiles';
+const CACHE_NAME = 'idoma-lifeline-cache-v1';
+const TILES_CACHE_NAME = 'idoma-lifeline-map-tiles';
 
 const ASSETS_TO_CACHE = [
   '/',

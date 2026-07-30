@@ -43,7 +43,7 @@ export default function AdminLoginPage() {
               <span className="material-symbols-outlined text-primary text-2xl" style={{ fontVariationSettings: "'FILL' 1" }}>
                 signal_cellular_alt
               </span>
-              <h1 className="font-headline-md text-headline-md text-on-surface">SafePath</h1>
+              <h1 className="font-headline-md text-headline-md text-on-surface">Idoma Lifeline</h1>
             </div>
             <h2 className="font-headline-sm text-headline-sm text-on-surface-variant font-semibold">Authorized Personnel Only</h2>
           </div>

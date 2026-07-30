@@ -9,7 +9,7 @@ export function isOnline() {
 
 // Fetch helper with auth header
 async function request(path, options = {}) {
-  const token = localStorage.getItem('safepath_token');
+  const token = localStorage.getItem('idoma-lifeline_token');
   const headers = {
     'Content-Type': 'application/json',
     ...(options.headers || {})
@@ -167,19 +167,19 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ phone, password })
     });
-    localStorage.setItem('safepath_token', data.token);
-    localStorage.setItem('safepath_user', JSON.stringify(data.user));
+    localStorage.setItem('idoma-lifeline_token', data.token);
+    localStorage.setItem('idoma-lifeline_user', JSON.stringify(data.user));
     return data;
   },
 
   logout() {
-    localStorage.removeItem('safepath_token');
-    localStorage.removeItem('safepath_user');
+    localStorage.removeItem('idoma-lifeline_token');
+    localStorage.removeItem('idoma-lifeline_user');
   },
 
   getCurrentUser() {
     try {
-      return JSON.parse(localStorage.getItem('safepath_user'));
+      return JSON.parse(localStorage.getItem('idoma-lifeline_user'));
     } catch {
       return null;
     }
@@ -233,7 +233,7 @@ if (typeof window !== 'undefined') {
       if (count > 0) {
         console.log(`Auto-synced ${count} reports.`);
         // Dispatch custom event to let UI know database sync completed
-        window.dispatchEvent(new CustomEvent('safepath_synced'));
+        window.dispatchEvent(new CustomEvent('idoma-lifeline_synced'));
       }
     });
   });
