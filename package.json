@@ -1,0 +1,12 @@
+{
+  "name": "safepath-root",
+  "version": "1.0.0",
+  "description": "Root workspace configuration for SafePath Emergency Mapping",
+  "scripts": {
+    "install:all": "npm install --prefix backend && npm install --prefix frontend",
+    "backend": "npm run start --prefix backend",
+    "frontend": "npm run dev --prefix frontend",
+    "build:frontend": "npm run build --prefix frontend",
+    "start": "node -e \"const { spawn } = require('child_process'); spawn('npm', ['run', 'backend'], { stdio: 'inherit', shell: true }); spawn('npm', ['run', 'frontend'], { stdio: 'inherit', shell: true });\""
+  }
+}

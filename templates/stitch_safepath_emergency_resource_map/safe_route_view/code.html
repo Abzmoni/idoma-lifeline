@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>SafePath - Triage Map</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-secondary-fixed-variant": "#3e4755",
+                        "surface-bright": "#fff8f6",
+                        "surface-container-highest": "#f7ddd4",
+                        "outline": "#8d7165",
+                        "on-background": "#261913",
+                        "inverse-primary": "#ffb595",
+                        "surface": "#fff8f6",
+                        "surface-container-high": "#fce3d9",
+                        "secondary": "#565f6d",
+                        "secondary-fixed-dim": "#bec7d7",
+                        "error-container": "#ffdad6",
+                        "outline-variant": "#e1bfb2",
+                        "on-error-container": "#93000a",
+                        "inverse-surface": "#3c2d27",
+                        "on-secondary-fixed": "#131c28",
+                        "tertiary-container": "#0076d2",
+                        "tertiary-fixed": "#d4e3ff",
+                        "on-surface-variant": "#594137",
+                        "primary-container": "#c64f00",
+                        "on-primary-container": "#fffbff",
+                        "on-error": "#ffffff",
+                        "primary": "#9e3d00",
+                        "on-tertiary-fixed-variant": "#004883",
+                        "primary-fixed-dim": "#ffb595",
+                        "tertiary-fixed-dim": "#a4c9ff",
+                        "inverse-on-surface": "#ffede7",
+                        "error": "#ba1a1a",
+                        "secondary-fixed": "#dae3f4",
+                        "primary-fixed": "#ffdbcc",
+                        "secondary-container": "#dae3f4",
+                        "on-secondary-container": "#5c6573",
+                        "surface-dim": "#eed5cb",
+                        "surface-variant": "#f7ddd4",
+                        "on-tertiary-fixed": "#001c39",
+                        "on-secondary": "#ffffff",
+                        "background": "#fff8f6",
+                        "surface-container-low": "#fff1ec",
+                        "on-tertiary-container": "#fdfcff",
+                        "tertiary": "#005da8",
+                        "surface-container": "#ffe9e1",
+                        "on-tertiary": "#ffffff",
+                        "on-surface": "#261913",
+                        "on-primary-fixed-variant": "#7c2e00",
+                        "surface-tint": "#a23f00",
+                        "surface-container-lowest": "#ffffff",
+                        "on-primary": "#ffffff",
+                        "on-primary-fixed": "#351000"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "margin-mobile": "16px",
+                        "touch-target": "48px",
+                        "gutter": "16px",
+                        "margin-desktop": "32px",
+                        "base": "4px"
+                    },
+                    "fontFamily": {
+                        "headline-lg": ["Public Sans"],
+                        "data-sm": ["IBM Plex Mono"],
+                        "body-md": ["Public Sans"],
+                        "label-caps": ["Public Sans"],
+                        "data-lg": ["IBM Plex Mono"],
+                        "body-lg": ["Public Sans"],
+                        "headline-md": ["Public Sans"],
+                        "headline-sm": ["Public Sans"]
+                    },
+                    "fontSize": {
+                        "headline-lg": ["32px", { "lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "data-sm": ["13px", { "lineHeight": "18px", "fontWeight": "500" }],
+                        "body-md": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+                        "label-caps": ["12px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "700" }],
+                        "data-lg": ["16px", { "lineHeight": "24px", "fontWeight": "500" }],
+                        "body-lg": ["18px", { "lineHeight": "28px", "fontWeight": "400" }],
+                        "headline-md": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "700" }],
+                        "headline-sm": ["20px", { "lineHeight": "28px", "fontWeight": "600" }]
+                    }
+                },
+            },
+        }
+    </script>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500&amp;family=Public+Sans:wght@400;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        body { background-color: #F1F2EE; }
+    </style>
+</head>
+<body class="bg-[#F1F2EE] text-on-surface flex flex-col h-screen md:flex-row antialiased">
+<!-- TopAppBar (Mobile) -->
+<header class="md:hidden bg-surface dark:bg-background border-b border-outline-variant dark:border-outline fixed top-0 left-0 w-full z-50 flex justify-between items-center px-margin-mobile md:px-margin-desktop h-touch-target">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary dark:text-primary-fixed" data-icon="signal_cellular_alt">signal_cellular_alt</span>
+<span class="font-headline-md text-headline-md font-bold text-primary dark:text-primary-fixed">SafePath</span>
+</div>
+<div>
+<span class="material-symbols-outlined text-on-surface-variant dark:text-on-secondary-fixed-variant" data-icon="account_circle">account_circle</span>
+</div>
+</header>
+<!-- SideNavBar (Desktop) -->
+<nav class="hidden md:flex flex-col fixed left-0 top-0 h-full z-40 bg-surface dark:bg-background border-r border-outline-variant dark:border-outline w-64 pt-[calc(theme('spacing.touch-target')+1rem)] px-4">
+<div class="mb-8 px-2">
+<div class="font-headline-sm text-headline-sm font-bold text-primary dark:text-primary-fixed mb-1">SafePath Admin</div>
+<div class="font-data-sm text-data-sm text-on-surface-variant">Regional Command</div>
+</div>
+<ul class="flex flex-col gap-2 font-label-caps text-label-caps">
+<li class="flex items-center gap-3 px-4 py-3 bg-primary text-on-primary font-bold rounded">
+<span class="material-symbols-outlined" data-icon="map">map</span>
+                Map
+            </li>
+<li class="flex items-center gap-3 px-4 py-3 text-on-surface-variant dark:text-on-secondary-fixed-variant hover:bg-surface-container hover:bg-surface-container-highest dark:hover:bg-secondary-container transition-colors duration-150 rounded cursor-pointer">
+<span class="material-symbols-outlined" data-icon="assignment">assignment</span>
+                Triage
+            </li>
+<li class="flex items-center gap-3 px-4 py-3 text-on-surface-variant dark:text-on-secondary-fixed-variant hover:bg-surface-container hover:bg-surface-container-highest dark:hover:bg-secondary-container transition-colors duration-150 rounded cursor-pointer">
+<span class="material-symbols-outlined" data-icon="inventory_2">inventory_2</span>
+                Resources
+            </li>
+<li class="flex items-center gap-3 px-4 py-3 text-on-surface-variant dark:text-on-secondary-fixed-variant hover:bg-surface-container hover:bg-surface-container-highest dark:hover:bg-secondary-container transition-colors duration-150 rounded cursor-pointer">
+<span class="material-symbols-outlined" data-icon="insights">insights</span>
+                Analytics
+            </li>
+<li class="flex items-center gap-3 px-4 py-3 text-on-surface-variant dark:text-on-secondary-fixed-variant hover:bg-surface-container hover:bg-surface-container-highest dark:hover:bg-secondary-container transition-colors duration-150 rounded cursor-pointer">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+                Settings
+            </li>
+</ul>
+<div class="mt-auto pb-8">
+<button class="w-full bg-[#E8600C] text-[#FFFFFF] font-label-caps text-label-caps py-3 uppercase tracking-wider font-bold rounded flex justify-center items-center gap-2">
+<span class="material-symbols-outlined">warning</span>
+                Report Incident
+            </button>
+</div>
+</nav>
+<!-- Main Content Area -->
+<main class="flex-1 mt-[calc(theme('spacing.touch-target'))] md:mt-0 md:ml-64 relative flex flex-col h-[calc(100vh-theme('spacing.touch-target')*2)] md:h-screen">
+<!-- Search & Routing Fields -->
+<div class="absolute top-4 left-4 right-4 z-20 flex flex-col gap-2 md:w-96 md:left-8 md:top-8 bg-surface p-4 rounded border border-outline shadow-sm">
+<div class="relative flex items-center border border-outline rounded bg-white">
+<span class="material-symbols-outlined text-primary px-3" data-icon="my_location">my_location</span>
+<input class="w-full h-12 bg-transparent focus:outline-none focus:ring-2 focus:ring-primary font-body-md text-body-md border-none" readonly="" type="text" value="Current Location"/>
+</div>
+<div class="relative flex items-center border border-outline rounded bg-white">
+<span class="material-symbols-outlined text-tertiary px-3" data-icon="location_on">location_on</span>
+<input class="w-full h-12 bg-transparent focus:outline-none focus:ring-2 focus:ring-primary font-body-md text-body-md border-none" readonly="" type="text" value="Sector 4 Evac Center"/>
+</div>
+</div>
+<!-- Map Area -->
+<div class="flex-1 relative bg-surface-variant overflow-hidden">
+<!-- Simplified map representation using an image -->
+<div class="absolute inset-0 bg-cover bg-center" data-alt="A highly detailed satellite map view of a dense urban environment during an emergency scenario. The map is rendered in high contrast grayscale, highlighting street layouts. Overlaying the map is a thick, bright neon green line indicating a safe evacuation route, which curves sharply to avoid a prominent, translucent red circular zone marking a chemical hazard or danger area. The lighting is harsh and functional, conveying a sense of urgency and precise tactical planning within a civil defense context." data-location="Urban Grid" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuBOfqgWOZm6tt44zzfnjp2KrwD_Aoqhv4JLxOa6WBFHpLC5QV62eNV5kXD3AJEZuSZe2Sh6RdwYUuwPtwu69cYDhI95b6ZeQqObLLcG3VlhZfM-J74V6VWp3vMvY5Adrk7cRN2fTzrsJZHktbXz-mURefRgs0qM4MMgrUyppqhtvR25ZE7S4QMImbjNi1fIWUPut_A4QoRBLvyWnzTAVGzvJtlGheRXpSk5OWSua-kZkycyvNprod2l4Q')"></div>
+<!-- Decorative SVG Route Overlay (Conceptual) -->
+<svg class="absolute inset-0 w-full h-full pointer-events-none" preserveaspectratio="none" viewbox="0 0 100 100">
+<!-- Hazard Zone -->
+<circle cx="50" cy="50" fill="rgba(220, 38, 38, 0.4)" r="15" stroke="#DC2626" stroke-width="0.5"></circle>
+<text dominant-baseline="middle" fill="#DC2626" font-family="IBM Plex Mono" font-size="2" font-weight="bold" text-anchor="middle" x="50" y="50">HAZARD</text>
+<!-- Route -->
+<path d="M 20 80 Q 20 60 40 40 T 80 20" fill="none" stroke="#22C55E" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"></path>
+<!-- Markers -->
+<circle cx="20" cy="80" fill="#22C55E" r="2"></circle>
+<circle cx="80" cy="20" fill="#3B82F6" r="2"></circle>
+</svg>
+</div>
+<!-- Route Summary Bar -->
+<div class="bg-surface border-t-4 border-primary p-4 z-20 flex justify-between items-center w-full md:absolute md:bottom-8 md:left-8 md:w-[calc(100%-4rem)] lg:w-96 rounded-b">
+<div class="flex flex-col">
+<span class="font-data-lg text-data-lg font-bold text-on-surface">3.2 km</span>
+<span class="font-data-sm text-data-sm text-error flex items-center gap-1 mt-1">
+<span class="material-symbols-outlined text-[14px]">warning</span>
+                    Avoids 1 hazard zone
+                </span>
+</div>
+<button class="bg-primary text-on-primary font-label-caps text-label-caps px-6 h-touch-target rounded uppercase tracking-wider font-bold">
+                START
+            </button>
+</div>
+</main>
+<!-- BottomNavBar (Mobile) -->
+<nav class="md:hidden fixed bottom-0 left-0 w-full z-50 flex justify-around items-center h-touch-target bg-surface dark:bg-background border-t-2 border-outline dark:border-outline-variant">
+<div class="flex flex-col items-center justify-center bg-primary text-on-primary px-4 py-1 h-full font-label-caps text-label-caps">
+<span class="material-symbols-outlined" data-icon="explore">explore</span>
+<span class="mt-1">Live Map</span>
+</div>
+<div class="flex flex-col items-center justify-center text-on-background dark:text-on-secondary-fixed hover:bg-surface-container-high h-full px-4 py-1 font-label-caps text-label-caps scale-95 active:scale-90 transition-transform">
+<span class="material-symbols-outlined" data-icon="filter_list">filter_list</span>
+<span class="mt-1">Filter</span>
+</div>
+<div class="flex flex-col items-center justify-center text-on-background dark:text-on-secondary-fixed hover:bg-surface-container-high h-full px-4 py-1 font-label-caps text-label-caps scale-95 active:scale-90 transition-transform">
+<span class="material-symbols-outlined" data-icon="add_circle">add_circle</span>
+<span class="mt-1">Report</span>
+</div>
+<div class="flex flex-col items-center justify-center text-on-background dark:text-on-secondary-fixed hover:bg-surface-container-high h-full px-4 py-1 font-label-caps text-label-caps scale-95 active:scale-90 transition-transform">
+<span class="material-symbols-outlined" data-icon="person">person</span>
+<span class="mt-1">Profile</span>
+</div>
+</nav>
+</body></html>

@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>SafePath - St. Mary's Shelter</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;600;700&amp;family=IBM+Plex+Mono:wght@500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-secondary-fixed-variant": "#3e4755",
+                        "surface-bright": "#fff8f6",
+                        "surface-container-highest": "#f7ddd4",
+                        "outline": "#8d7165",
+                        "on-background": "#261913",
+                        "inverse-primary": "#ffb595",
+                        "surface": "#fff8f6",
+                        "surface-container-high": "#fce3d9",
+                        "secondary": "#565f6d",
+                        "secondary-fixed-dim": "#bec7d7",
+                        "error-container": "#ffdad6",
+                        "outline-variant": "#e1bfb2",
+                        "on-error-container": "#93000a",
+                        "inverse-surface": "#3c2d27",
+                        "on-secondary-fixed": "#131c28",
+                        "tertiary-container": "#0076d2",
+                        "tertiary-fixed": "#d4e3ff",
+                        "on-surface-variant": "#594137",
+                        "primary-container": "#c64f00",
+                        "on-primary-container": "#fffbff",
+                        "on-error": "#ffffff",
+                        "primary": "#9e3d00",
+                        "on-tertiary-fixed-variant": "#004883",
+                        "primary-fixed-dim": "#ffb595",
+                        "tertiary-fixed-dim": "#a4c9ff",
+                        "inverse-on-surface": "#ffede7",
+                        "error": "#ba1a1a",
+                        "secondary-fixed": "#dae3f4",
+                        "primary-fixed": "#ffdbcc",
+                        "secondary-container": "#dae3f4",
+                        "on-secondary-container": "#5c6573",
+                        "surface-dim": "#eed5cb",
+                        "surface-variant": "#f7ddd4",
+                        "on-tertiary-fixed": "#001c39",
+                        "on-secondary": "#ffffff",
+                        "background": "#fff8f6",
+                        "surface-container-low": "#fff1ec",
+                        "on-tertiary-container": "#fdfcff",
+                        "tertiary": "#005da8",
+                        "surface-container": "#ffe9e1",
+                        "on-tertiary": "#ffffff",
+                        "on-surface": "#261913",
+                        "on-primary-fixed-variant": "#7c2e00",
+                        "surface-tint": "#a23f00",
+                        "surface-container-lowest": "#ffffff",
+                        "on-primary": "#ffffff",
+                        "on-primary-fixed": "#351000"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "margin-mobile": "16px",
+                        "touch-target": "48px",
+                        "gutter": "16px",
+                        "margin-desktop": "32px",
+                        "base": "4px"
+                    },
+                    "fontFamily": {
+                        "headline-lg": ["Public Sans"],
+                        "data-sm": ["IBM Plex Mono"],
+                        "body-md": ["Public Sans"],
+                        "label-caps": ["Public Sans"],
+                        "data-lg": ["IBM Plex Mono"],
+                        "body-lg": ["Public Sans"],
+                        "headline-md": ["Public Sans"],
+                        "headline-sm": ["Public Sans"]
+                    },
+                    "fontSize": {
+                        "headline-lg": ["32px", { "lineHeight": "40px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "data-sm": ["13px", { "lineHeight": "18px", "fontWeight": "500" }],
+                        "body-md": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+                        "label-caps": ["12px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "700" }],
+                        "data-lg": ["16px", { "lineHeight": "24px", "fontWeight": "500" }],
+                        "body-lg": ["18px", { "lineHeight": "28px", "fontWeight": "400" }],
+                        "headline-md": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "700" }],
+                        "headline-sm": ["20px", { "lineHeight": "28px", "fontWeight": "600" }]
+                    }
+                },
+            },
+        }
+    </script>
+</head>
+<body class="bg-surface-container-lowest text-on-surface font-body-md min-h-screen flex flex-col justify-end">
+<!-- Mock Map Background to contextualize the bottom sheet -->
+<div class="fixed inset-0 z-0">
+<img class="w-full h-full object-cover opacity-30" data-alt="A highly detailed, starkly minimalist digital map of a city sector seen from above. The map uses a high-contrast functional color palette with a cool stone gray background and thin, precise dark ink lines for roads. Several vivid primary orange square markers with pointed bottoms indicate critical locations. The lighting is flat and uniform, emphasizing legibility and utility over realism, resembling a modern emergency command interface under bright, sterile lighting." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDQXEmaA-zyPCgeoREBH4tXoGrElxoGO9IXbHFDDWxg7s2VIDCBjQH1lrY0Hq-RPlZxSswOn6vYggr5fCU_MyFQZCbU0GOfw08VWvmQ0z2m4UO0McxQ8FDEMUGXzppUtf5xqSxkV5AxGrhVZda8D7sqNA-x_6TWlDDzfjeYCWpsNBWz5KsGgo32YqadTV_M9MRBaMHFIibjB6r2iV9dRHLU-JDpCNbyrPMdO6BkGO9KngHH7fDjti185g"/>
+</div>
+<!-- Top Nav Placeholder (from JSON logic, simplified for context) -->
+<header class="bg-surface fixed top-0 left-0 w-full z-10 flex justify-between items-center px-margin-mobile md:px-margin-desktop h-touch-target border-b border-outline-variant shadow-sm">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary">signal_cellular_alt</span>
+<span class="font-headline-md text-headline-md font-bold text-primary">SafePath</span>
+</div>
+<div>
+<span class="material-symbols-outlined text-on-surface-variant">account_circle</span>
+</div>
+</header>
+<!-- Expanded Bottom Sheet overlay -->
+<div aria-hidden="true" class="fixed inset-0 bg-on-surface/20 z-40 transition-opacity"></div>
+<!-- Bottom Sheet Container -->
+<div class="relative z-50 bg-surface-container-lowest w-full rounded-t-xl border-t border-outline flex flex-col pt-2 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
+<!-- Drag Handle Indicator -->
+<div class="w-12 h-1 bg-outline rounded-full mx-auto mb-4"></div>
+<!-- Sheet Header Area -->
+<div class="px-margin-mobile pb-4 border-b border-outline-variant flex justify-between items-start">
+<div class="flex flex-col gap-1">
+<div class="flex items-center gap-2 mb-1">
+<span class="bg-on-surface-variant text-surface-container-lowest px-2 py-0.5 rounded-sm flex items-center gap-1 font-label-caps text-label-caps">
+<span class="material-symbols-outlined text-[14px]">home</span>
+                        VERIFIED SHELTER
+                    </span>
+</div>
+<h2 class="font-headline-md text-headline-md text-on-surface m-0">St. Mary's Shelter</h2>
+<div class="flex items-center gap-2 text-on-surface-variant">
+<span class="material-symbols-outlined text-[16px]">location_on</span>
+<span class="font-data-lg text-data-lg">2.1 km</span>
+</div>
+</div>
+<button class="w-touch-target h-touch-target flex items-center justify-center rounded-full bg-surface-container hover:bg-surface-container-high transition-colors text-on-surface-variant">
+<span class="material-symbols-outlined">close</span>
+</button>
+</div>
+<!-- Sheet Content Body -->
+<div class="px-margin-mobile py-4 flex flex-col gap-4 overflow-y-auto max-h-[60vh]">
+<!-- Description Box -->
+<div class="bg-surface-container-low border border-outline-variant rounded-lg p-4">
+<p class="font-body-md text-body-md text-on-surface m-0">Urgent medical supplies needed at sector 4. Multiple minor injuries reported.</p>
+</div>
+<!-- Stats/Details Grid -->
+<div class="grid grid-cols-2 gap-4">
+<div class="border border-outline-variant rounded-lg p-3 flex flex-col gap-1">
+<span class="font-label-caps text-label-caps text-on-surface-variant">CAPACITY</span>
+<div class="flex items-end gap-1">
+<span class="font-data-lg text-data-lg text-on-surface font-bold">45</span>
+<span class="font-data-sm text-data-sm text-on-surface-variant pb-0.5">/100</span>
+</div>
+</div>
+<div class="border border-outline-variant rounded-lg p-3 flex flex-col gap-1">
+<span class="font-label-caps text-label-caps text-on-surface-variant">STATUS</span>
+<div class="flex items-center gap-1">
+<span class="w-2 h-2 rounded-full bg-primary"></span>
+<span class="font-body-md text-body-md text-on-surface">Accepting</span>
+</div>
+</div>
+</div>
+<!-- Action Area -->
+<div class="pt-4 mt-auto">
+<button class="w-full h-touch-target bg-primary text-on-primary font-label-caps text-label-caps uppercase rounded flex items-center justify-center gap-2 hover:bg-primary-container transition-colors">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">directions</span>
+                    GET DIRECTIONS
+                </button>
+</div>
+</div>
+</div>
+</body></html>

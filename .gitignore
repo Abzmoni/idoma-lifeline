@@ -1,0 +1,16 @@
+node_modules/
+dist/
+build/
+
+# Local secrets
+.env
+.env.local
+*.env.local
+
+# SQLite demo database -- regenerated on boot by backend/seed.js
+*.db
+*.db-journal
+*.sqlite
+
+.DS_Store
+*.log

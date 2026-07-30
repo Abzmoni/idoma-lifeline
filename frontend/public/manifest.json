@@ -1,0 +1,16 @@
+{
+  "short_name": "SafePath",
+  "name": "SafePath Emergency Resource Mapping System",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any"
+    }
+  ],
+  "start_url": "/#/",
+  "background_color": "#F1F2EE",
+  "theme_color": "#E8600C",
+  "display": "standalone",
+  "orientation": "portrait"
+}
