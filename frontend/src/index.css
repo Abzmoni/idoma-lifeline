@@ -44,7 +44,7 @@ body {
 }
 
 /* Strict form styling from design system */
-input[type="text"], input[type="password"], input[type="tel"], select, textarea {
+input[type="text"], input[type="password"], input[type="tel"], input[type="number"], select, textarea {
   border: 1px solid #CFCBC0 !important;
   border-radius: 0 !important;
   height: 48px;

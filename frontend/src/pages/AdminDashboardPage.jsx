@@ -327,16 +327,16 @@ export default function AdminDashboardPage() {
   }
 
   return (
-    <div className="h-screen w-full flex flex-col font-body-md bg-[#F1F2EE] antialiased text-ink">
+    <div className="min-h-screen lg:h-screen w-full flex flex-col font-body-md bg-[#F1F2EE] antialiased text-ink">
       
       {/* Top Header */}
-      <header className="flex justify-between items-center px-6 h-touch-target bg-white border-b border-outline">
-        <div className="flex items-center space-x-3">
+      <header className="flex justify-between items-center px-3 sm:px-6 h-touch-target bg-white border-b border-outline overflow-hidden">
+        <div className="flex items-center space-x-2 sm:space-x-3 flex-shrink-0 mr-2">
           <span className="material-symbols-outlined text-primary text-2xl" style={{ fontVariationSettings: "'FILL' 1" }}>signal_cellular_alt</span>
-          <h1 className="font-headline-sm text-headline-sm font-bold text-ink uppercase tracking-tight">Idoma Lifeline Ops Console</h1>
+          <h1 className="text-sm sm:text-base lg:text-headline-sm font-bold text-ink uppercase tracking-tight whitespace-nowrap"><span className="hidden md:inline">Idoma Lifeline </span>Ops Console</h1>
         </div>
         
-        <div className="flex items-center space-x-4">
+        <div className="flex items-center space-x-2 sm:space-x-4 flex-shrink-0">
           <div className="hidden md:flex items-center space-x-2 text-xs font-data-sm text-on-surface-variant bg-surface-container-high border border-border-grey px-2 py-1">
             <span className="material-symbols-outlined text-sm">person_pin</span>
             <span>{currentUser?.name} ({currentUser?.role})</span>
@@ -344,26 +344,27 @@ export default function AdminDashboardPage() {
           
           <button 
             onClick={handleTriggerSeed}
-            className="border border-border-grey bg-white hover:bg-slate-100 px-3 py-1 font-label-caps text-xs flex items-center gap-1 uppercase"
+            className="border border-border-grey bg-white hover:bg-slate-100 px-2 sm:px-3 py-1 font-label-caps text-xs flex items-center gap-1 uppercase flex-shrink-0"
           >
             <span className="material-symbols-outlined text-sm">restart_alt</span>
-            Re-seed Data
+            <span className="hidden sm:inline">Re-seed Data</span>
           </button>
 
           <button 
             onClick={handleLogout}
-            className="bg-ink hover:bg-red-700 text-white px-3 py-1 font-label-caps text-xs uppercase"
+            className="bg-ink hover:bg-red-700 text-white px-2 sm:px-3 py-1 font-label-caps text-xs uppercase flex items-center gap-1 flex-shrink-0"
           >
-            Logout
+            <span className="material-symbols-outlined text-sm sm:hidden">logout</span>
+            <span className="hidden sm:inline">Logout</span>
           </button>
         </div>
       </header>
 
       {/* Main Grid split screen */}
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 overflow-hidden">
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 overflow-y-auto lg:overflow-hidden">
         
         {/* Left column (Pending Reports + Stats + logs) */}
-        <section className="lg:col-span-5 flex flex-col border-r border-outline bg-white overflow-hidden">
+        <section className="lg:col-span-5 flex flex-col border-r border-outline bg-white overflow-hidden min-h-[50vh] lg:min-h-0">
           
           {/* Stats Bar */}
           <div className="grid grid-cols-3 border-b border-outline bg-[#F1F2EE] text-center font-data-sm divide-x divide-outline">

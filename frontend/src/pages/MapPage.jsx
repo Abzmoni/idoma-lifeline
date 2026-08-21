@@ -475,7 +475,11 @@ export default function MapPage() {
       .bindTooltip(endPt.label || 'Destination', { permanent: false, direction: 'top' });
     routeMarkers.current = [mStart, mEnd];
 
-    mapInstance.current.fitBounds(routePolyline.current.getBounds(), { padding: [50, 50] });
+    const isMobile = window.innerWidth < 768;
+    mapInstance.current.fitBounds(routePolyline.current.getBounds(), { 
+      paddingTopLeft: [50, isMobile ? 120 : 50],
+      paddingBottomRight: [50, 50]
+    });
   };
 
   // Request & Draw Route Avoidance
@@ -516,7 +520,7 @@ export default function MapPage() {
   };
 
   return (
-    <div class="relative h-screen w-full font-body-md antialiased text-ink">
+    <div className="relative h-screen w-full font-body-md antialiased text-ink">
       
       {/* Leaflet Map Container */}
       <div ref={mapRef} className="absolute inset-0 z-0 bg-[#e5e5dc]"></div>
@@ -527,22 +531,22 @@ export default function MapPage() {
       </div>
 
       {/* Top App Header */}
-      <header className="fixed top-0 left-0 w-full z-50 flex justify-between items-center px-margin-mobile md:px-margin-desktop h-touch-target bg-surface border-b border-outline-variant">
-        <div className="flex items-center space-x-2">
+      <header className="fixed top-0 left-0 w-full z-50 flex justify-between items-center px-3 sm:px-margin-mobile md:px-margin-desktop h-touch-target bg-surface border-b border-outline-variant overflow-hidden">
+        <div className="flex items-center space-x-1.5 sm:space-x-2 flex-shrink-0 mr-2">
           <span className="material-symbols-outlined text-primary" style={{ fontVariationSettings: "'FILL' 1" }}>signal_cellular_alt</span>
-          <h1 className="font-headline-md text-headline-md font-bold text-primary uppercase tracking-tight">Idoma Lifeline</h1>
+          <h1 className="text-sm sm:text-base md:text-headline-md font-bold text-primary uppercase tracking-tight whitespace-nowrap"><span className="hidden sm:inline">Idoma </span>Lifeline</h1>
         </div>
-        <div className="flex items-center space-x-3">
+        <div className="flex items-center gap-1 sm:gap-1.5 md:gap-3 flex-shrink-0">
           {/* Online/Offline Status Banner */}
           {isOffline ? (
-            <div className="flex items-center space-x-1.5 bg-error/10 px-2 py-1 rounded-full border border-error/20">
-              <div className="w-2 h-2 rounded-full bg-error"></div>
-              <span className="font-label-caps text-label-caps text-error font-bold">OFFLINE - CACHED DATA</span>
+            <div className="flex items-center space-x-1 sm:space-x-1.5 bg-error/10 px-1.5 sm:px-2 py-1 rounded-full border border-error/20">
+              <div className="w-2 h-2 rounded-full bg-error flex-shrink-0"></div>
+              <span className="font-label-caps text-[10px] sm:text-label-caps text-error font-bold whitespace-nowrap"><span className="hidden sm:inline">OFFLINE - CACHED DATA</span><span className="sm:hidden">OFFLINE</span></span>
             </div>
           ) : (
-            <div className="flex items-center space-x-1.5 bg-status-green/10 px-2 py-1 rounded-full border border-status-green/20">
-              <div className="w-2 h-2 rounded-full bg-status-green animate-pulse"></div>
-              <span className="font-label-caps text-label-caps text-status-green font-bold">LIVE</span>
+            <div className="flex items-center space-x-1 sm:space-x-1.5 bg-status-green/10 px-1.5 sm:px-2 py-1 rounded-full border border-status-green/20">
+              <div className="w-2 h-2 rounded-full bg-status-green animate-pulse flex-shrink-0"></div>
+              <span className="font-label-caps text-[10px] sm:text-label-caps text-status-green font-bold">LIVE</span>
             </div>
           )}
 
@@ -565,24 +569,24 @@ export default function MapPage() {
           
           <button 
             onClick={() => setIsRoutingActive(!isRoutingActive)}
-            className={`flex items-center space-x-1 px-2 py-1 border rounded bg-white hover:bg-surface-container-high transition-colors focus:outline-none focus:ring-2 focus:ring-signal-orange ${isRoutingActive ? 'border-primary border-2 text-primary' : 'border-border-grey text-ink'}`}
+            className={`flex items-center gap-1 px-1.5 sm:px-2 py-1 border rounded bg-white hover:bg-surface-container-high transition-colors focus:outline-none focus:ring-2 focus:ring-signal-orange flex-shrink-0 ${isRoutingActive ? 'border-primary border-2 text-primary' : 'border-border-grey text-ink'}`}
           >
             <span className="material-symbols-outlined text-[18px]">directions</span>
-            <span className="font-label-caps text-label-caps font-bold">SAFE ROUTE</span>
+            <span className="font-label-caps text-label-caps font-bold hidden md:inline">SAFE ROUTE</span>
           </button>
           
           <button 
             onClick={() => setIsLegendActive(!isLegendActive)}
-            className={`flex items-center space-x-1 px-2 py-1 border rounded bg-white hover:bg-surface-container-high transition-colors focus:outline-none focus:ring-2 focus:ring-signal-orange ${isLegendActive ? 'border-primary border-2 text-primary' : 'border-border-grey text-ink'}`}
+            className={`flex items-center gap-1 px-1.5 sm:px-2 py-1 border rounded bg-white hover:bg-surface-container-high transition-colors focus:outline-none focus:ring-2 focus:ring-signal-orange flex-shrink-0 ${isLegendActive ? 'border-primary border-2 text-primary' : 'border-border-grey text-ink'}`}
           >
             <span className="material-symbols-outlined text-[18px]">list</span>
-            <span className="font-label-caps text-label-caps font-bold">LEGEND</span>
+            <span className="font-label-caps text-label-caps font-bold hidden md:inline">LEGEND</span>
           </button>
           
           <button 
             aria-label="Coordinator Login" 
             onClick={() => navigate('/admin/login')}
-            className="text-primary hover:bg-surface-container-high p-1 rounded"
+            className="text-primary hover:bg-surface-container-high p-1 rounded flex-shrink-0"
           >
             <span className="material-symbols-outlined">account_circle</span>
           </button>
@@ -621,13 +625,13 @@ export default function MapPage() {
 
       {/* Safe Route Planning Side Panel / Floating Sheet */}
       {isRoutingActive && (
-        <div className="absolute top-32 left-4 z-40 bg-white border border-border-grey p-4 w-[320px] shadow-lg animate-[fadeIn_0.2s_ease-out]">
+        <div className="absolute top-32 left-4 right-4 sm:right-auto z-40 bg-white border border-border-grey p-4 w-[calc(100%-2rem)] sm:w-[320px] shadow-lg animate-[fadeIn_0.2s_ease-out]">
           <div className="flex justify-between items-center mb-3">
             <h3 className="font-headline-sm text-headline-sm text-ink flex items-center gap-1">
               <span className="material-symbols-outlined text-primary">directions</span>
               Safe Navigation
             </h3>
-            <button onClick={() => { setIsRoutingActive(false); clearRoute(); }} className="text-on-surface-variant hover:text-ink">
+            <button onClick={() => setIsRoutingActive(false)} className="text-on-surface-variant hover:text-ink">
               <span className="material-symbols-outlined">close</span>
             </button>
           </div>
@@ -663,7 +667,10 @@ export default function MapPage() {
             </div>
 
             <button 
-              onClick={() => handleCalculateRoute()}
+              onClick={async () => {
+                await handleCalculateRoute();
+                setIsRoutingActive(false);
+              }}
               disabled={isCalculatingRoute}
               className="w-full bg-primary hover:bg-ink text-white font-label-caps text-label-caps uppercase py-2 tracking-wider mt-2 border-b-2 border-[#a23f00]"
             >
@@ -707,18 +714,40 @@ export default function MapPage() {
         </div>
       )}
 
+      {/* Compact Route Results Banner (Shows when map is clear) */}
+      {!isRoutingActive && calculatedRoute && (
+        <div className="absolute top-32 left-4 right-4 sm:right-auto z-40 bg-white border-l-4 border-l-status-green p-3 w-[calc(100%-2rem)] sm:w-[320px] shadow-lg animate-[fadeIn_0.2s_ease-out]">
+          <div className="flex items-center gap-1.5 text-status-green font-bold text-sm mb-2">
+            <span className="material-symbols-outlined text-sm">verified_user</span>
+            SAFE PATH RESOLVED
+          </div>
+          <div className="flex justify-between items-center">
+            {routeDistance && <div className="text-xs font-data-sm text-ink">Distance: {routeDistance.toFixed(1)} km</div>}
+            {avoidedCount > 0 && <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 border border-primary/20 font-bold">⚠️ Detoured {avoidedCount}</span>}
+          </div>
+          <div className="mt-3 flex gap-2">
+            <button onClick={() => setIsRoutingActive(true)} className="flex-1 border border-border-grey hover:bg-surface-container-high py-1.5 text-[10px] font-label-caps uppercase font-bold text-ink">
+              Change Route
+            </button>
+            <button onClick={clearRoute} className="flex-1 bg-error/10 hover:bg-error/20 text-error border border-error/20 py-1.5 text-[10px] font-label-caps uppercase font-bold">
+              Clear Path
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Floating Action Button (FAB) for Reporting */}
       <button 
         onClick={() => navigate('/report')}
         aria-label="Report Incident" 
-        className="absolute bottom-24 right-4 z-40 bg-signal-orange text-white rounded-full w-14 h-14 flex items-center justify-center shadow-[0_4px_12px_rgba(232,96,12,0.3)] hover:bg-[#d6550a] active:scale-95 transition-all border border-[#d6550a]"
+        className="absolute bottom-24 md:bottom-8 right-4 z-40 bg-signal-orange text-white rounded-full w-14 h-14 flex items-center justify-center shadow-[0_4px_12px_rgba(232,96,12,0.3)] hover:bg-[#d6550a] active:scale-95 transition-all border border-[#d6550a]"
       >
         <span className="material-symbols-outlined text-[28px]" style={{ fontVariationSettings: "'FILL' 1" }}>add_alert</span>
       </button>
 
       {/* Peeking Bottom Sheet (Selected Resource Details) */}
       {selectedResource && (
-        <div className="fixed bottom-[calc(48px+env(safe-area-inset-bottom))] md:bottom-6 md:left-6 md:w-[360px] w-full z-40 bg-white border border-border-grey px-4 py-3 pb-6 md:pb-4 rounded-t-xl md:rounded-none border-t-4 border-t-signal-orange shadow-lg transform transition-transform duration-300">
+        <div className="fixed bottom-[calc(48px+env(safe-area-inset-bottom))] md:bottom-6 md:left-6 md:w-[360px] w-full z-40 bg-white border border-border-grey px-4 py-3 pb-6 md:pb-4 rounded-t-xl md:rounded-none border-t-4 border-t-signal-orange shadow-lg transform transition-transform duration-300 max-h-[60vh] overflow-y-auto">
           <div className="w-10 h-1 bg-border-grey rounded-full mx-auto mb-3 md:hidden"></div>
           <div className="flex justify-between items-start">
             <div className="flex gap-3">
@@ -794,7 +823,7 @@ export default function MapPage() {
                   }
                 });
                 setRouteEnd(closestK);
-                setIsRoutingActive(true);
+                setSelectedResource(null);
                 handleCalculateRoute(startKey, closestK, {
                   label: selectedResource.name,
                   lat: selectedResource.lat,
@@ -810,25 +839,26 @@ export default function MapPage() {
       )}
 
       {/* Bottom Nav Bar (Mobile Layout Anchor) */}
-      <nav className="md:hidden fixed bottom-0 left-0 w-full z-50 flex justify-around items-center h-touch-target bg-surface border-t-2 border-outline pb-[env(safe-area-inset-bottom)]">
-        <button className="flex flex-col items-center justify-center bg-primary text-on-primary px-4 py-1 h-full w-full max-w-[25%] transition-colors duration-200">
-          <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>explore</span>
-          <span className="font-label-caps text-[10px] mt-0.5">Live Map</span>
+      <nav className="md:hidden fixed bottom-0 left-0 w-full z-50 flex items-stretch h-touch-target bg-surface border-t-2 border-outline pb-[env(safe-area-inset-bottom)]">
+        <button className="flex flex-col items-center justify-center bg-primary text-on-primary flex-1 py-1 transition-colors duration-200">
+          <span className="material-symbols-outlined text-[20px]" style={{ fontVariationSettings: "'FILL' 1" }}>explore</span>
+          <span className="font-label-caps text-[10px] mt-0.5">Map</span>
         </button>
         <button 
           onClick={() => navigate('/report')}
-          className="flex flex-col items-center justify-center text-on-background hover:bg-surface-container-high h-full w-full max-w-[25%] transition-colors duration-200"
+          className="flex flex-col items-center justify-center text-on-background hover:bg-surface-container-high flex-1 py-1 transition-colors duration-200"
         >
-          <span className="material-symbols-outlined">add_circle</span>
+          <span className="material-symbols-outlined text-[20px]">add_circle</span>
           <span className="font-label-caps text-[10px] mt-0.5">Report</span>
         </button>
         <button 
           onClick={() => navigate('/admin')}
-          className="flex flex-col items-center justify-center text-on-background hover:bg-surface-container-high h-full w-full max-w-[25%] transition-colors duration-200"
+          className="flex flex-col items-center justify-center text-on-background hover:bg-surface-container-high flex-1 py-1 transition-colors duration-200"
         >
-          <span className="material-symbols-outlined">dashboard</span>
+          <span className="material-symbols-outlined text-[20px]">dashboard</span>
           <span className="font-label-caps text-[10px] mt-0.5">Admin</span>
         </button>
+      </nav>
       {/* Legend Panel Overlay */}
       {isLegendActive && (
         <div className="absolute top-32 right-4 z-40 bg-white/95 backdrop-blur-sm border border-border-grey p-3 shadow-md w-[200px] font-data-sm text-[11px] animate-[fadeIn_0.2s_ease-out]">
@@ -866,8 +896,6 @@ export default function MapPage() {
           </div>
         </div>
       )}
-
-      </nav>
 
     </div>
   );

@@ -318,14 +318,14 @@ export default function ResourceEditPage() {
               <button 
                 type="button" 
                 onClick={() => navigate('/admin')}
-                className="flex-1 border-2 border-outline hover:bg-surface-container-high font-label-caps text-label-caps uppercase text-center flex items-center justify-center"
+                className="flex-1 h-touch-target border-2 border-outline hover:bg-surface-container-high font-label-caps text-label-caps uppercase text-center flex items-center justify-center"
               >
                 Cancel
               </button>
               <button 
                 type="submit" 
                 disabled={saving}
-                className="flex-1 bg-primary hover:bg-ink text-white font-label-caps text-label-caps uppercase tracking-wide border-b-4 border-[#a23f00] active:border-b-0 active:translate-y-0.5 transition-all flex items-center justify-center"
+                className="flex-1 h-touch-target bg-primary hover:bg-ink text-white font-label-caps text-label-caps uppercase tracking-wide border-b-4 border-[#a23f00] active:border-b-0 active:translate-y-0.5 transition-all flex items-center justify-center"
               >
                 {saving ? 'Saving...' : 'Save Changes'}
               </button>

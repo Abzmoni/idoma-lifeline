@@ -290,14 +290,14 @@ export default function ReportPage() {
               <button 
                 type="button" 
                 onClick={() => navigate('/')}
-                className="flex-1 border-2 border-outline hover:bg-surface-container-high font-label-caps text-label-caps uppercase text-center flex items-center justify-center"
+                className="flex-1 h-touch-target border-2 border-outline hover:bg-surface-container-high font-label-caps text-label-caps uppercase text-center flex items-center justify-center"
               >
                 Cancel
               </button>
               <button 
                 type="submit" 
                 disabled={isSubmitting}
-                className="flex-1 bg-primary hover:bg-ink text-white font-label-caps text-label-caps uppercase tracking-wide border-b-4 border-[#a23f00] active:border-b-0 active:translate-y-0.5 transition-all flex items-center justify-center"
+                className="flex-1 h-touch-target bg-primary hover:bg-ink text-white font-label-caps text-label-caps uppercase tracking-wide border-b-4 border-[#a23f00] active:border-b-0 active:translate-y-0.5 transition-all flex items-center justify-center"
               >
                 {isSubmitting ? 'Submitting...' : isOffline ? 'Save Offline' : 'Submit Report'}
               </button>
