@@ -12,13 +12,14 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = resolveJwtSecret();
 
-// Never ship a shared, hard-coded signing key. Production must provide JWT_SECRET
+// Never ship a shared, hard-coded signing key. Production should provide JWT_SECRET
 // (render.yaml generates one); local development gets a random key persisted per machine.
 function resolveJwtSecret() {
   if (process.env.JWT_SECRET) return process.env.JWT_SECRET;
   if (process.env.NODE_ENV === 'production') {
-    console.error('JWT_SECRET must be set in production. Refusing to start.');
-    process.exit(1);
+    // Stay online, but with a random key: coordinator logins reset whenever the server restarts.
+    console.error('WARNING: JWT_SECRET is not set. Using a random key; set JWT_SECRET to keep logins across restarts.');
+    return require('crypto').randomBytes(32).toString('hex');
   }
   const file = path.join(__dirname, '.jwt-secret');
   try {
