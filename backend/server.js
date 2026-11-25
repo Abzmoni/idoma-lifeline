@@ -10,7 +10,26 @@ const { seedDatabase } = require('./seed');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const JWT_SECRET = process.env.JWT_SECRET || 'idoma-lifeline_super_secret_key_12345';
+const JWT_SECRET = resolveJwtSecret();
+
+// Never ship a shared, hard-coded signing key. Production must provide JWT_SECRET
+// (render.yaml generates one); local development gets a random key persisted per machine.
+function resolveJwtSecret() {
+  if (process.env.JWT_SECRET) return process.env.JWT_SECRET;
+  if (process.env.NODE_ENV === 'production') {
+    console.error('JWT_SECRET must be set in production. Refusing to start.');
+    process.exit(1);
+  }
+  const file = path.join(__dirname, '.jwt-secret');
+  try {
+    const saved = fs.readFileSync(file, 'utf8').trim();
+    if (saved) return saved;
+  } catch { /* first run: generate below */ }
+  const secret = require('crypto').randomBytes(32).toString('hex');
+  try { fs.writeFileSync(file, secret, { mode: 0o600 }); } catch { /* read-only disk: key lasts for this process */ }
+  console.warn('JWT_SECRET not set; using a generated local development key.');
+  return secret;
+}
 
 app.use(cors());
 app.use(express.json());
@@ -36,27 +55,84 @@ const LANDMARKS = {
   'okpokwu': { lat: 6.9500, lng: 8.1000 },
   'catholic church': { lat: 7.1910, lng: 8.1300 },
   'central school': { lat: 7.1945, lng: 8.1310 },
-  'town hall': { lat: 7.1900, lng: 8.1350 }
+  'town hall': { lat: 7.1900, lng: 8.1350 },
+  'general hospital': { lat: 7.1820, lng: 8.1300 },
+  'methodist school': { lat: 7.1880, lng: 8.1420 },
+  // Idoma LGA headquarters and major towns. Approximate town centres for
+  // "nearest help" lookups; confirm with local coordinators before a live pilot.
+  'ugbokpo': { lat: 7.6500, lng: 7.9000 },     // Apa LGA
+  'obagaji': { lat: 7.9300, lng: 7.8700 },     // Agatu LGA
+  'oju': { lat: 6.8500, lng: 8.4167 },         // Oju LGA
+  'obarike ito': { lat: 7.0167, lng: 8.3333 }, // Obi LGA
+  'obi': { lat: 7.0167, lng: 8.3333 },
+  'igumale': { lat: 6.8000, lng: 7.9667 },     // Ado LGA
+  'ado': { lat: 6.8000, lng: 7.9667 },
+  'utonkon': { lat: 6.9500, lng: 8.0500 },
+  'otukpa': { lat: 7.1000, lng: 7.6500 },      // Ogbadibo LGA
+  'orokam': { lat: 7.0333, lng: 7.5833 },
+  'okpoga': { lat: 7.0500, lng: 7.8000 },      // Okpokwu LGA
+  'idekpa': { lat: 7.3800, lng: 8.0000 },      // Ohimini LGA
+  'ohimini': { lat: 7.3800, lng: 8.0000 },
+  'ochobo': { lat: 7.1800, lng: 7.9900 }
 };
+const LANDMARK_EXAMPLES = 'Otukpo, Ugbokpo, Obagaji, Oju, Igumale or Okpoga';
+
+// USSD menu text. Pidgin should be reviewed by a fluent speaker before a live shortcode.
+// An Idoma entry can be added with the same keys once native speakers have written it.
+const USSD_TEXT = {
+  en: {
+    main: 'Welcome to Idoma Lifeline\n1. Find nearest resource\n2. Report a resource or hazard\n3. Pidgin',
+    findType: 'Select resource type:\n1. Shelter\n2. Water\n3. Medical\n4. Food\n5. Safe Zone',
+    landmark: 'Enter your nearest landmark (e.g. Otukpo market):',
+    nearest: 'Nearest {type}: {name} ({km}km). {desc}',
+    none: 'No {type} found near {place}',
+    reportType: 'Select type to report:\n1. Shelter\n2. Water\n3. Medical\n4. Food\n5. Hazard',
+    describe: 'Enter short description (e.g. Church hall open):',
+    reportLandmark: 'Enter nearest landmark (e.g. Otukpo market):',
+    done: 'Report submitted for coordinator review. Thank you for keeping the community safe. ID: {id}',
+    notFound: 'Place not recognised. Try a town such as {examples}.',
+    invalid: 'Invalid selection. Please dial again.',
+    type_shelter: 'SHELTER', type_water: 'WATER', type_medical: 'MEDICAL', type_food: 'FOOD', type_safe_zone: 'SAFE ZONE',
+  },
+  pcm: {
+    main: 'Welcome to Idoma Lifeline\n1. Find help near you\n2. Report wetin you see\n3. English',
+    findType: 'Wetin you need?\n1. Place to stay\n2. Water\n3. Hospital\n4. Food\n5. Safe place',
+    landmark: 'Type the place wey near you (e.g. Otukpo market):',
+    nearest: '{type} wey near pass: {name} ({km}km). {desc}',
+    none: 'We no see {type} near {place}',
+    reportType: 'Wetin you wan report?\n1. Place to stay\n2. Water\n3. Hospital\n4. Food\n5. Danger',
+    describe: 'Talk small about am (e.g. Church hall open):',
+    reportLandmark: 'Type the place wey near am (e.g. Otukpo market):',
+    done: 'We don receive your report. Coordinator go check am. Thank you. ID: {id}',
+    notFound: 'We no know that place. Try town like {examples}.',
+    invalid: 'Wrong choice. Abeg dial again.',
+    type_shelter: 'Place to stay', type_water: 'Water', type_medical: 'Hospital', type_food: 'Food', type_safe_zone: 'Safe place',
+  },
+};
+const normalisePlace = text => String(text || '').toLowerCase().replace(/['’.]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+const NORMALISED_LANDMARKS = Object.entries(LANDMARKS).map(([name, coords]) => [normalisePlace(name), coords]);
 
 function geocodeLandmark(text) {
-  if (!text) return null;
-  const cleanText = text.trim().toLowerCase();
-  
-  // Direct match
-  if (LANDMARKS[cleanText]) {
-    return LANDMARKS[cleanText];
+  const clean = normalisePlace(text);
+  if (clean.length < 2) return null;
+  const exact = NORMALISED_LANDMARKS.find(([name]) => name === clean);
+  if (exact) return exact[1];
+
+  // Landmark named inside the message ("near otukpo market please"): prefer the most specific (longest) name.
+  const padded = ` ${clean} `;
+  const contained = NORMALISED_LANDMARKS.filter(([name]) => padded.includes(` ${name} `))
+    .sort((a, b) => b[0].length - a[0].length)[0];
+  if (contained) return contained[1];
+
+  // Short partial entry ("ugbok"): match the start of a landmark word, never single letters.
+  if (clean.length >= 4) {
+    const partial = NORMALISED_LANDMARKS.filter(([name]) => name.split(' ').some(word => word.startsWith(clean)))
+      .sort((a, b) => a[0].length - b[0].length)[0];
+    if (partial) return partial[1];
   }
-  
-  // Fuzzy match (substring)
-  for (const landmark in LANDMARKS) {
-    if (cleanText.includes(landmark) || landmark.includes(cleanText)) {
-      return LANDMARKS[landmark];
-    }
-  }
-  
+
   // Default fallback to center of Otukpo
-  return LANDMARKS['otukpo'];
+  return null;
 }
 
 // Authentication Middleware
@@ -76,7 +152,10 @@ function authenticateToken(req, res, next) {
 // PUBLIC ENDPOINTS
 
 // 1. Get verified resources (or all if admin checks status)
-app.get('/api/resources', async (req, res) => {
+app.get('/api/resources', (req, res, next) => {
+  if (req.query.status && req.query.status !== 'verified') return authenticateToken(req, res, next);
+  next();
+}, async (req, res) => {
   try {
     const { type, bbox, status } = req.query;
     const resources = await db.getResources({ type, bbox, status });
@@ -92,6 +171,7 @@ app.get('/api/resources/:id', async (req, res) => {
   try {
     const resource = await db.getResourceById(req.params.id);
     if (!resource) return res.status(404).json({ error: 'Resource not found' });
+    if (resource.status !== 'verified') return authenticateToken(req, res, () => res.json(resource));
     res.json(resource);
   } catch (error) {
     console.error(error);
@@ -102,12 +182,22 @@ app.get('/api/resources/:id', async (req, res) => {
 // 3. Submit a new report (rate limiting mocked/simplified)
 app.post('/api/reports', async (req, res) => {
   try {
-    const { type, name, description, location, reporter_contact, source } = req.body;
+    const { type, name, description, location, reporter_contact, public_contact, source, client_request_id } = req.body;
     
     if (!type || !name || !location || typeof location.lat === 'undefined' || typeof location.lng === 'undefined') {
       return res.status(400).json({ error: 'Missing required fields (type, name, location.lat, location.lng)' });
     }
     
+    const allowed = ['shelter', 'water', 'medical', 'food', 'safe_zone', 'hazard'];
+    if (!allowed.includes(type) || typeof name !== 'string' || !name.trim() || name.length > 180 ||
+        !Number.isFinite(location.lat) || !Number.isFinite(location.lng) || Math.abs(location.lat) > 90 || Math.abs(location.lng) > 180 ||
+        (client_request_id && !/^[0-9a-f-]{36}$/i.test(client_request_id)) ||
+        (public_contact && (typeof public_contact !== 'string' || !/^\+?[\d ()-]{5,25}$/.test(public_contact))) ||
+        (description != null && (typeof description !== 'string' || description.length > 3000)) ||
+        (reporter_contact != null && (typeof reporter_contact !== 'string' || reporter_contact.length > 60)) ||
+        (source && !['app', 'sms', 'admin'].includes(source))) {
+      return res.status(400).json({ error: 'Please provide a valid resource type, title, coordinates and contact number.' });
+    }
     const report = await db.createReport({
       type,
       name,
@@ -115,10 +205,12 @@ app.post('/api/reports', async (req, res) => {
       lat: location.lat,
       lng: location.lng,
       reporter_contact,
+      public_contact,
+      client_request_id,
       source: source || 'app'
     });
     
-    res.status(201).json(report);
+    res.status(201).json({ id: report.id, status: report.status });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Failed to submit report' });
@@ -126,76 +218,8 @@ app.post('/api/reports', async (req, res) => {
 });
 
 // 4. Safe route path avoidance
-app.post('/api/route', async (req, res) => {
-  try {
-    const { start, end } = req.body;
-    if (!start || !end) {
-      return res.status(400).json({ error: 'Missing start or end coordinates' });
-    }
-
-    // Get all verified hazard zones
-    const hazards = await db.getResources({ type: 'hazard', status: 'verified' });
-
-    // Standard path is direct
-    let pathPoints = [start, end];
-
-    // Simple hazard avoidance logic
-    // Demo hazard buffer: roughly 4.5km around verified hazard reports.
-    const HAZARD_RADIUS_DEG = 0.04; 
-
-    for (const hazard of hazards) {
-      const H = { lat: hazard.lat, lng: hazard.lng };
-
-      // Line segment from Start (S) to End (E)
-      const S = start;
-      const E = end;
-
-      // Vector SE
-      const dx = E.lng - S.lng;
-      const dy = E.lat - S.lat;
-      const lenSq = dx * dx + dy * dy;
-
-      if (lenSq === 0) continue;
-
-      // Project H onto segment SE
-      let t = ((H.lng - S.lng) * dx + (H.lat - S.lat) * dy) / lenSq;
-      t = Math.max(0, Math.min(1, t)); // Clamp to segment
-
-      // Closest point C on segment
-      const C = {
-        lat: S.lat + t * dy,
-        lng: S.lng + t * dx
-      };
-
-      // Distance from H to C
-      const distLat = C.lat - H.lat;
-      const distLng = C.lng - H.lng;
-      const distSq = distLat * distLat + distLng * distLng;
-      const dist = Math.sqrt(distSq);
-
-      if (dist < HAZARD_RADIUS_DEG) {
-        // Path intersects hazard! Calculate detour point D
-        // Push C away from H to outside the circle (with 25% safety margin)
-        const pushFactor = (HAZARD_RADIUS_DEG * 1.25) / (dist || 0.001);
-        const D = {
-          lat: H.lat + distLat * pushFactor,
-          lng: H.lng + distLng * pushFactor
-        };
-
-        // Insert detour point between start and end
-        pathPoints = [start, D, end];
-        break; // Detour around first intersecting hazard for the demo
-      }
-    }
-
-    res.json({
-      route: pathPoints,
-      avoided_hazards_count: pathPoints.length > 2 ? 1 : 0
-    });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Failed to calculate safe route' });
-  }
+app.post('/api/route', (req, res) => {
+  res.status(503).json({ error: 'Road routing requires an online road-routing provider. Geometric fallback routes are not available.' });
 });
 
 // AUTH LOGIN
@@ -338,7 +362,7 @@ app.post('/api/sms/inbound', async (req, res) => {
           replyText = `No resources found near ${placeName}`;
         }
       } else {
-        replyText = `Could not geocode location: ${placeName}`;
+        replyText = `Place not recognised: ${placeName}. Try a town such as ${LANDMARK_EXAMPLES}.`;
       }
     } else if (typeMatch) {
       const typeStr = typeMatch[1].toLowerCase();
@@ -360,7 +384,7 @@ app.post('/api/sms/inbound', async (req, res) => {
           replyText = `No ${typeStr.toUpperCase()} found near ${placeName}`;
         }
       } else {
-        replyText = `Could not geocode location: ${placeName}`;
+        replyText = `Place not recognised: ${placeName}. Try a town such as ${LANDMARK_EXAMPLES}.`;
       }
     } else if (reportMatch) {
       parsedCommand = 'REPORT';
@@ -382,7 +406,7 @@ app.post('/api/sms/inbound', async (req, res) => {
         relatedReportId = newReport.id;
         replyText = `Report submitted for review. Thank you. ID: ${newReport.id.slice(0, 8)}`;
       } else {
-        replyText = `Could not find location ${placeName}. Report aborted.`;
+        replyText = `Place not recognised: ${placeName}. Report not saved. Try a town such as ${LANDMARK_EXAMPLES}.`;
       }
     } else {
       replyText = `Unknown command. Use: NEAR <place>, WATER <place>, SHELTER <place>, or REPORT <type> <desc>, <place>`;
@@ -427,54 +451,50 @@ app.post('/api/sms/ussd', async (req, res) => {
     console.log(`USSD session ${sessionId} from ${phoneNumber}: text="${text}"`);
     let response = '';
 
-    const parts = text.split('*').filter(p => p !== '');
+    // Option 3 on the main menu toggles English <-> Pidgin; the rest of the session continues in that language.
+    let parts = text.split('*').filter(p => p !== '');
+    let lang = 'en';
+    while (parts[0] === '3') { lang = lang === 'en' ? 'pcm' : 'en'; parts = parts.slice(1); }
+    const say = (key, vars = {}) => USSD_TEXT[lang][key].replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? '');
 
     if (parts.length === 0) {
-      // Main Menu
-      response = `CON Welcome to Idoma Lifeline\n1. Find nearest resource\n2. Report a resource or hazard`;
+      response = `CON ${say('main')}`;
     } else if (parts[0] === '1') {
-      // Find Resource Sub-Menu
       if (parts.length === 1) {
-        response = `CON Select resource type:\n1. Shelter\n2. Water\n3. Medical\n4. Food\n5. Safe Zone`;
+        response = `CON ${say('findType')}`;
       } else if (parts.length === 2) {
-        response = `CON Enter your nearest landmark (e.g. Otukpo market):`;
+        response = `CON ${say('landmark')}`;
       } else if (parts.length === 3) {
-        const typeIdx = parts[1];
-        const landmark = parts[2];
         const typeMap = { '1': 'shelter', '2': 'water', '3': 'medical', '4': 'food', '5': 'safe_zone' };
-        const typeStr = typeMap[typeIdx] || 'shelter';
-
+        const typeStr = typeMap[parts[1]] || 'shelter';
+        const landmark = parts[2];
         const coords = geocodeLandmark(landmark);
+        if (!coords) return res.type('text/plain').send(`END ${say('notFound', { examples: LANDMARK_EXAMPLES })}`);
         const verifiedList = await db.getResources({ type: typeStr, status: 'verified' });
-
-        const nearby = verifiedList.map(r => {
-          const d = db.getDistance(coords.lat, coords.lng, r.lat, r.lng);
-          return { ...r, distance: d };
-        }).sort((a, b) => a.distance - b.distance);
-
+        const nearby = verifiedList.map(r => ({ ...r, distance: db.getDistance(coords.lat, coords.lng, r.lat, r.lng) }))
+          .sort((a, b) => a.distance - b.distance);
+        const typeLabel = say('type_' + typeStr);
         if (nearby.length > 0) {
           const nearest = nearby[0];
-          response = `END Nearest ${typeStr.toUpperCase()}: ${nearest.name} (${nearest.distance.toFixed(1)}km). ${nearest.description || ''}`;
+          response = `END ${say('nearest', { type: typeLabel, name: nearest.name, km: nearest.distance.toFixed(1), desc: nearest.description || '' })}`;
         } else {
-          response = `END No ${typeStr.toUpperCase()} found near ${landmark}`;
+          response = `END ${say('none', { type: typeLabel, place: landmark })}`;
         }
       }
     } else if (parts[0] === '2') {
-      // Report Resource Sub-Menu
       if (parts.length === 1) {
-        response = `CON Select type to report:\n1. Shelter\n2. Water\n3. Medical\n4. Food\n5. Hazard`;
+        response = `CON ${say('reportType')}`;
       } else if (parts.length === 2) {
-        response = `CON Enter short description (e.g. Church hall open):`;
+        response = `CON ${say('describe')}`;
       } else if (parts.length === 3) {
-        response = `CON Enter nearest landmark (e.g. Otukpo market):`;
+        response = `CON ${say('reportLandmark')}`;
       } else if (parts.length === 4) {
-        const typeIdx = parts[1];
+        const typeMap = { '1': 'shelter', '2': 'water', '3': 'medical', '4': 'food', '5': 'hazard' };
+        const typeStr = typeMap[parts[1]] || 'shelter';
         const desc = parts[2];
         const landmark = parts[3];
-        const typeMap = { '1': 'shelter', '2': 'water', '3': 'medical', '4': 'food', '5': 'hazard' };
-        const typeStr = typeMap[typeIdx] || 'shelter';
-
         const coords = geocodeLandmark(landmark);
+        if (!coords) return res.type('text/plain').send(`END ${say('notFound', { examples: LANDMARK_EXAMPLES })}`);
         const newReport = await db.createReport({
           type: typeStr,
           name: `${typeStr.toUpperCase()} reported via USSD`,
@@ -484,11 +504,10 @@ app.post('/api/sms/ussd', async (req, res) => {
           reporter_contact: phoneNumber,
           source: 'sms'
         });
-
-        response = `END Report submitted successfully. Thank you for keeping the community safe. ID: ${newReport.id.slice(0, 8)}`;
+        response = `END ${say('done', { id: newReport.id.slice(0, 8) })}`;
       }
     } else {
-      response = `END Invalid selection. Please dial again.`;
+      response = `END ${say('invalid')}`;
     }
 
     res.setHeader('Content-Type', 'text/plain');
@@ -534,18 +553,10 @@ if (fs.existsSync(frontendDistPath)) {
   });
 }
 
-// Start Server
-app.listen(PORT, async () => {
-  console.log(`Server running on port ${PORT}`);
-  try {
-    await db.initDb();
-    // Self-seeding: a fresh deploy (any driver) comes up with the full demo dataset,
-    // so there is never an empty map on stage. Idempotent -- existing data is left alone.
-    const summary = await seedDatabase();
-    console.log(`Demo data ready: ${summary.resources} resources, ${summary.pending_reports} pending reports`);
-    console.log(`Coordinator login: ${summary.credentials.phone} / ${summary.credentials.password}`);
-  } catch (error) {
-    console.error('Error starting database:', error);
-  }
-});
-
+// Serve traffic only after migrations and demo data are ready.
+async function start() {
+  await db.initDb();
+  await seedDatabase();
+  app.listen(PORT, () => console.log('Server ready on port ' + PORT));
+}
+start().catch(error => { console.error('Startup failed:', error.message); process.exitCode = 1; });

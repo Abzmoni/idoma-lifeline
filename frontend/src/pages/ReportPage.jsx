@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import L from 'leaflet';
 import { api } from '../api';
+import { locate, accuracyLabel, PRECISE_LOCATION_METERS, validPoint } from '../location';
 
 export default function ReportPage() {
   const navigate = useNavigate();
@@ -13,6 +14,12 @@ export default function ReportPage() {
   const [lat, setLat] = useState(defaultLat);
   const [lng, setLng] = useState(defaultLng);
   const [reporterContact, setReporterContact] = useState('');
+  const [publicContact, setPublicContact] = useState('');
+  const [message, setMessage] = useState('');
+  const [locationConfirmed, setLocationConfirmed] = useState(false);
+  const [locating, setLocating] = useState(false);
+  const locationRequest = useRef(0);
+  const accuracyCircle = useRef(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
 
@@ -39,11 +46,11 @@ export default function ReportPage() {
     if (!miniMapInstance.current && miniMapRef.current) {
       miniMapInstance.current = L.map(miniMapRef.current, {
         zoomControl: true,
-        attributionControl: false
+        attributionControl: true
       }).setView([defaultLat, defaultLng], 12);
 
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19
+        maxZoom: 19, attribution: '&copy; OpenStreetMap contributors'
       }).addTo(miniMapInstance.current);
 
       const locatorIcon = L.divIcon({
@@ -64,42 +71,50 @@ export default function ReportPage() {
       markerRef.current = L.marker([defaultLat, defaultLng], { draggable: true, icon: locatorIcon }).addTo(miniMapInstance.current);
       
       markerRef.current.on('dragend', () => {
+        locationRequest.current++; setLocating(false); setLocationConfirmed(true); setMessage('Location confirmed by your pin.');
+        accuracyCircle.current?.remove();
         const position = markerRef.current.getLatLng();
         setLat(position.lat);
         setLng(position.lng);
       });
 
       miniMapInstance.current.on('click', (e) => {
+        locationRequest.current++; setLocating(false); setLocationConfirmed(true); setMessage('Location confirmed by your pin.');
+        accuracyCircle.current?.remove();
         const { lat: clickLat, lng: clickLng } = e.latlng;
         setLat(clickLat);
         setLng(clickLng);
         markerRef.current.setLatLng([clickLat, clickLng]);
       });
     }
+    const instance = miniMapInstance.current;
+    return () => {
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      locationRequest.current++;
+      instance?.remove(); miniMapInstance.current = null; markerRef.current = null;
+    };
   }, []);
 
-  const handleUseMyLocation = () => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition((position) => {
-        const { latitude, longitude } = position.coords;
-        setLat(latitude);
-        setLng(longitude);
-        if (miniMapInstance.current && markerRef.current) {
-          miniMapInstance.current.setView([latitude, longitude], 14);
-          markerRef.current.setLatLng([latitude, longitude]);
-        }
-      }, (error) => {
-        console.error('Error fetching geolocation:', error);
-        alert('Could not determine your location. Please drop a pin on the map instead.');
-      });
-    } else {
-      alert('Geolocation is not supported by your browser.');
-    }
+  const handleUseMyLocation = async () => {
+    const id = ++locationRequest.current;
+    setLocating(true); setLocationConfirmed(false); setMessage('Requesting a fresh location…');
+    try {
+      const point = await locate();
+      if (id !== locationRequest.current) return;
+      setLat(point.lat); setLng(point.lng);
+      markerRef.current.setLatLng([point.lat, point.lng]);
+      accuracyCircle.current?.remove();
+      accuracyCircle.current = L.circle([point.lat, point.lng], { radius: point.accuracy, color: '#005da8', fillOpacity: 0.08 }).addTo(miniMapInstance.current);
+      miniMapInstance.current.fitBounds(accuracyCircle.current.getBounds(), { padding: [25, 25], maxZoom: 16 });
+      setMessage('Browser accuracy: about ' + accuracyLabel(point.accuracy) + '. ' + (point.accuracy > PRECISE_LOCATION_METERS ? 'This is approximate. Move the pin to the resource location, then confirm it.' : 'Check the resource location and confirm the pin.'));
+    } catch (error) { if (id === locationRequest.current) setMessage(error.message); }
+    finally { if (id === locationRequest.current) setLocating(false); }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!name.trim()) return alert('Resource name is required');
+    if (!name.trim()) return setMessage('Resource name is required.');
+    if (!locationConfirmed || !validPoint({ lat, lng })) return setMessage('Please tap the map, move the pin or confirm the location before submitting.');
     
     setIsSubmitting(true);
 
@@ -109,6 +124,7 @@ export default function ReportPage() {
       description,
       location: { lat: parseFloat(lat), lng: parseFloat(lng) },
       reporter_contact: reporterContact,
+      public_contact: publicContact,
       source: 'app'
     };
 
@@ -120,13 +136,12 @@ export default function ReportPage() {
         // Submitted offline, show confirmation page
         navigate('/offline-success');
       } else {
-        alert('Report submitted successfully! Thank you. It will appear on the public map once reviewed by a coordinator.');
-        navigate('/');
+        navigate('/offline-success?sent=1');
       }
     } catch (err) {
       console.error(err);
       setIsSubmitting(false);
-      alert('Failed to submit report. Please try again.');
+      setMessage(err.message || 'Could not save your report. Please try again.');
     }
   };
 
@@ -156,6 +171,7 @@ export default function ReportPage() {
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
+            {message && <p role="status" className="p-3 bg-orange-50 border border-orange-200 text-sm">{message}</p>}
             
             {/* Type selection grid */}
             <fieldset className="bg-surface p-4 border border-outline-variant rounded">
@@ -229,12 +245,14 @@ export default function ReportPage() {
                   className="text-xs font-bold text-primary hover:underline flex items-center gap-0.5"
                 >
                   <span className="material-symbols-outlined text-[14px]">my_location</span>
-                  Use My GPS
+                  {locating ? 'Locating…' : 'Use my location'}
                 </button>
               </div>
 
               {/* Mini Map */}
               <div ref={miniMapRef} className="h-[220px] w-full border border-border-grey mb-3 z-0"></div>
+              <p className="text-xs mb-2">Tap the map or move the pin to confirm the exact resource location. Browser location is an estimate.</p>
+              <button type="button" onClick={() => { setLocationConfirmed(true); setMessage('Pin location confirmed by you.'); }} className="border p-2 text-sm">Confirm this pin</button>
 
               {/* Coordinates Grid */}
               <div className="grid grid-cols-2 gap-4">
@@ -247,6 +265,7 @@ export default function ReportPage() {
                     onChange={(e) => {
                       const v = parseFloat(e.target.value);
                       setLat(v || 0);
+                      setLocationConfirmed(false);
                       if (markerRef.current) markerRef.current.setLatLng([v || 0, lng]);
                     }}
                     className="font-data-lg text-sm bg-white"
@@ -261,6 +280,7 @@ export default function ReportPage() {
                     onChange={(e) => {
                       const v = parseFloat(e.target.value);
                       setLng(v || 0);
+                      setLocationConfirmed(false);
                       if (markerRef.current) markerRef.current.setLatLng([lat, v || 0]);
                     }}
                     className="font-data-lg text-sm bg-white"
@@ -272,7 +292,7 @@ export default function ReportPage() {
             {/* Contact */}
             <div>
               <label className="block font-label-caps text-label-caps uppercase text-on-surface-variant mb-2">
-                Contact Phone Number (Optional)
+                Your phone number — private (optional)
               </label>
               <input 
                 type="tel" 
@@ -283,6 +303,12 @@ export default function ReportPage() {
               <p className="mt-1 text-[11px] text-on-surface-variant italic">
                 Note: Reporter details are strictly visible to coordinators and will not be shared publicly.
               </p>
+            </div>
+
+            <div>
+              <label className="block text-sm mb-2" htmlFor="public-contact">Facility phone — public (optional)</label>
+              <input id="public-contact" type="tel" value={publicContact} onChange={e => setPublicContact(e.target.value)} placeholder="Only a number authorised for public calls" pattern="[+0-9 ()-]{5,25}" />
+              <p className="mt-1 text-xs">This separate number will appear on the public map after review. Leave it blank to keep all contact details private.</p>
             </div>
 
             {/* Actions */}

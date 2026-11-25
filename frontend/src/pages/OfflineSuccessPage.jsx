@@ -1,8 +1,10 @@
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 
 export default function OfflineSuccessPage() {
   const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const sent = params.get('sent') === '1';
 
   return (
     <div className="bg-background text-on-background min-h-screen flex flex-col items-center justify-center p-margin-mobile antialiased">
@@ -17,9 +19,9 @@ export default function OfflineSuccessPage() {
         </div>
 
         <div className="space-y-4">
-          <h1 className="font-headline-lg text-headline-lg text-on-background m-0">Saved Offline.</h1>
+          <h1 className="font-headline-lg text-headline-lg text-on-background m-0">{sent ? 'Report received.' : 'Saved on this device.'}</h1>
           <p className="font-body-lg text-body-lg text-on-surface-variant max-w-[280px] mx-auto m-0 leading-relaxed">
-            Your emergency report is saved on this device and will sync automatically once connectivity is restored.
+            {sent ? 'Your report is awaiting coordinator review. It will appear on the public map after approval.' : 'Your report is waiting to sync. Keep this app open or reopen it when connected. You can also use “Sync now” on the map.'}
           </p>
         </div>
 

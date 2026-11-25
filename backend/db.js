@@ -3,7 +3,7 @@ const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const fs = require('fs');
 
-const isPostgres = process.env.DATABASE_URL && process.env.DATABASE_URL.startsWith('postgres://');
+const isPostgres = /^postgres(?:ql)?:\/\//.test(process.env.DATABASE_URL || '');
 let pgPool = null;
 let sqliteDb = null;
 
@@ -15,7 +15,7 @@ if (isPostgres) {
   });
 } else {
   console.log('Database config: Using SQLite (Local fallback)');
-  const dbPath = path.join(__dirname, 'idoma-lifeline.db');
+  const dbPath = process.env.SQLITE_PATH || path.join(__dirname, 'idoma-lifeline.db');
   sqliteDb = new sqlite3.Database(dbPath);
 }
 
@@ -250,6 +250,21 @@ async function initDb() {
       throw e;
     }
   }
+  // Additive migration for existing prototype databases.
+  if (isPostgres) {
+    await query('ALTER TABLE reports ADD COLUMN IF NOT EXISTS public_contact TEXT');
+    await query('ALTER TABLE reports ADD COLUMN IF NOT EXISTS client_request_id TEXT');
+  } else {
+    const columns = await query('PRAGMA table_info(reports)');
+    if (!columns.some(c => c.name === 'public_contact')) await query('ALTER TABLE reports ADD COLUMN public_contact TEXT');
+    if (!columns.some(c => c.name === 'client_request_id')) await query('ALTER TABLE reports ADD COLUMN client_request_id TEXT');
+  }
+  await query('CREATE UNIQUE INDEX IF NOT EXISTS reports_client_request_idx ON reports(client_request_id)');
+  // Remove only contacts copied by the old approval bug, preserving explicitly public contacts.
+  await query(`UPDATE resources SET contact_phone = NULL WHERE EXISTS (
+    SELECT 1 FROM reports r WHERE r.resource_id = resources.id
+    AND r.reporter_contact = resources.contact_phone AND r.public_contact IS NULL
+  )`);
 }
 
 // Distance helper (Haversine formula in JS)
@@ -349,44 +364,29 @@ module.exports = {
     return rows[0] || null;
   },
 
-  async createReport({ type, name, description, lat, lng, reporter_contact, source }) {
+  async createReport({ type, name, description, lat, lng, reporter_contact, public_contact, source, client_request_id }) {
+    const id = require('crypto').randomUUID();
+    const params = [id, type, name, description || '', lat, lng, reporter_contact || '', public_contact || null, source || 'app', client_request_id || null];
     if (isPostgres) {
-      const sql = `
-        INSERT INTO reports (type, name, description, location, reporter_contact, source, status)
-        VALUES ($1, $2, $3, ST_SetSRID(ST_MakePoint($4, $5), 4326)::geography, $6, $7, 'pending')
-        RETURNING id, type, name, description, ST_Y(location::geometry) AS lat, ST_X(location::geometry) AS lng, reporter_contact, source, status, created_at
-      `;
-      const rows = await query(sql, [type, name, description, lng, lat, reporter_contact, source || 'app']);
-      return rows[0];
+      await query(`INSERT INTO reports (id, type, name, description, location, reporter_contact, public_contact, source, client_request_id, status)
+        VALUES ($1, $2, $3, $4, ST_SetSRID(ST_MakePoint($6, $5), 4326)::geography, $7, $8, $9, $10, 'pending')
+        ON CONFLICT (client_request_id) DO NOTHING`, params);
     } else {
-      const id = require('crypto').randomUUID();
-      const sql = `
-        INSERT INTO reports (id, type, name, description, lat, lng, reporter_contact, source, status)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending')
-      `;
-      await query(sql, [id, type, name, description, lat, lng, reporter_contact, source || 'app']);
-      return {
-        id,
-        type,
-        name,
-        description,
-        lat,
-        lng,
-        reporter_contact,
-        source: source || 'app',
-        status: 'pending',
-        created_at: new Date().toISOString()
-      };
+      await query(`INSERT INTO reports (id, type, name, description, lat, lng, reporter_contact, public_contact, source, client_request_id, status)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'pending')
+        ON CONFLICT (client_request_id) DO NOTHING`, params);
     }
+    const rows = await query('SELECT id FROM reports WHERE ' + (client_request_id ? 'client_request_id = $1' : 'id = $1'), [client_request_id || id]);
+    return this.getReportById(rows[0].id);
   },
 
   async getReports(status) {
     let sql = '';
     const params = [];
     if (isPostgres) {
-      sql = `SELECT id, resource_id, type, name, description, ST_Y(location::geometry) AS lat, ST_X(location::geometry) AS lng, reporter_contact, source, status, reviewed_by, reviewed_at, created_at FROM reports`;
+      sql = `SELECT id, resource_id, type, name, description, ST_Y(location::geometry) AS lat, ST_X(location::geometry) AS lng, reporter_contact, public_contact, source, status, reviewed_by, reviewed_at, created_at FROM reports`;
     } else {
-      sql = `SELECT id, resource_id, type, name, description, lat, lng, reporter_contact, source, status, reviewed_by, reviewed_at, created_at FROM reports`;
+      sql = `SELECT id, resource_id, type, name, description, lat, lng, reporter_contact, public_contact, source, status, reviewed_by, reviewed_at, created_at FROM reports`;
     }
 
     if (status) {
@@ -401,9 +401,9 @@ module.exports = {
   async getReportById(id) {
     let sql = '';
     if (isPostgres) {
-      sql = `SELECT id, resource_id, type, name, description, ST_Y(location::geometry) AS lat, ST_X(location::geometry) AS lng, reporter_contact, source, status, reviewed_by, reviewed_at, created_at FROM reports WHERE id = $1`;
+      sql = `SELECT id, resource_id, type, name, description, ST_Y(location::geometry) AS lat, ST_X(location::geometry) AS lng, reporter_contact, public_contact, source, status, reviewed_by, reviewed_at, created_at FROM reports WHERE id = $1`;
     } else {
-      sql = `SELECT id, resource_id, type, name, description, lat, lng, reporter_contact, source, status, reviewed_by, reviewed_at, created_at FROM reports WHERE id = $1`;
+      sql = `SELECT id, resource_id, type, name, description, lat, lng, reporter_contact, public_contact, source, status, reviewed_by, reviewed_at, created_at FROM reports WHERE id = $1`;
     }
     const rows = await query(sql, [id]);
     return rows[0] || null;
@@ -413,6 +413,7 @@ module.exports = {
     // 1. Get the report
     const report = await this.getReportById(id);
     if (!report) throw new Error('Report not found');
+    if (report.status === 'approved' && report.resource_id) return this.getResourceById(report.resource_id);
 
     const reviewedAt = new Date().toISOString();
 
@@ -430,12 +431,12 @@ module.exports = {
       if (isPostgres) {
         await query(
           `UPDATE resources SET type = $1, name = $2, description = $3, location = ST_SetSRID(ST_MakePoint($4, $5), 4326)::geography, status = 'verified', contact_phone = $6, verified_by = $7, verified_at = $8, updated_at = now() WHERE id = $9`,
-          [report.type, report.name, report.description, report.lng, report.lat, report.reporter_contact, userId, reviewedAt, resourceId]
+          [report.type, report.name, report.description, report.lng, report.lat, report.public_contact, userId, reviewedAt, resourceId]
         );
       } else {
         await query(
           `UPDATE resources SET type = $1, name = $2, description = $3, lat = $4, lng = $5, status = 'verified', contact_phone = $6, verified_by = $7, verified_at = $8, updated_at = datetime('now') WHERE id = $9`,
-          [report.type, report.name, report.description, report.lat, report.lng, report.reporter_contact, userId, reviewedAt, resourceId]
+          [report.type, report.name, report.description, report.lat, report.lng, report.public_contact, userId, reviewedAt, resourceId]
         );
       }
     } else {
@@ -445,7 +446,7 @@ module.exports = {
           `INSERT INTO resources (type, name, description, location, status, contact_phone, source, verified_by, verified_at)
            VALUES ($1, $2, $3, ST_SetSRID(ST_MakePoint($4, $5), 4326)::geography, 'verified', $6, $7, $8, $9)
            RETURNING id`,
-          [report.type, report.name, report.description, report.lng, report.lat, report.reporter_contact, report.source, userId, reviewedAt]
+          [report.type, report.name, report.description, report.lng, report.lat, report.public_contact, report.source, userId, reviewedAt]
         );
         resourceId = rows[0].id;
       } else {
@@ -453,7 +454,7 @@ module.exports = {
         await query(
           `INSERT INTO resources (id, type, name, description, lat, lng, status, contact_phone, source, verified_by, verified_at)
            VALUES ($1, $2, $3, $4, $5, $6, 'verified', $7, $8, $9, $10)`,
-          [resourceId, report.type, report.name, report.description, report.lat, report.lng, report.reporter_contact, report.source, userId, reviewedAt]
+          [resourceId, report.type, report.name, report.description, report.lat, report.lng, report.public_contact, report.source, userId, reviewedAt]
         );
       }
       
@@ -508,10 +509,40 @@ module.exports = {
       resourcesByType[row.type] = parseInt(row.count);
     });
 
+    // Impact measures shown to coordinators (and on stage): review speed, channel mix, freshness.
+    const reportRows = await query(`SELECT source, status, created_at, reviewed_at FROM reports`);
+    const verifiedRows = await query(`SELECT verified_at FROM resources WHERE status = 'verified'`);
+    const toMs = value => {
+      if (!value) return NaN;
+      if (value instanceof Date) return value.getTime();
+      const text = String(value);
+      return new Date(/Z$|[+-]\d\d:?\d\d$/.test(text) ? text : text.replace(' ', 'T') + 'Z').getTime();
+    };
+    const reviewMinutes = reportRows
+      .filter(r => r.status !== 'pending' && r.reviewed_at)
+      .map(r => (toMs(r.reviewed_at) - toMs(r.created_at)) / 60000)
+      .filter(m => Number.isFinite(m) && m >= 0)
+      .sort((a, b) => a - b);
+    const mid = Math.floor(reviewMinutes.length / 2);
+    const medianReview = !reviewMinutes.length ? null
+      : reviewMinutes.length % 2 ? reviewMinutes[mid] : (reviewMinutes[mid - 1] + reviewMinutes[mid]) / 2;
+    const reportsBySource = { app: 0, sms: 0, admin: 0 };
+    reportRows.forEach(r => { reportsBySource[r.source] = (reportsBySource[r.source] || 0) + 1; });
+    const staleCutoff = Date.now() - 72 * 3600 * 1000;
+
     return {
       resources_by_type: resourcesByType,
       pending_reports: parseInt(pendingReportsRows[0]?.count || 0),
-      reports_24h: parseInt(reportsLast24hRows[0]?.count || 0)
+      reports_24h: parseInt(reportsLast24hRows[0]?.count || 0),
+      impact: {
+        reports_total: reportRows.length,
+        reports_by_source: reportsBySource,
+        basic_phone_share_pct: reportRows.length ? Math.round(100 * reportsBySource.sms / reportRows.length) : null,
+        reviewed_total: reviewMinutes.length,
+        median_review_minutes: medianReview === null ? null : Math.round(medianReview),
+        reviewed_within_24h_pct: reviewMinutes.length ? Math.round(100 * reviewMinutes.filter(m => m <= 1440).length / reviewMinutes.length) : null,
+        stale_resources: verifiedRows.filter(r => !(toMs(r.verified_at) >= staleCutoff)).length
+      }
     };
   },
 

@@ -1,0 +1,6 @@
+{
+  "name": "lifeline-demo-checks",
+  "private": true,
+  "scripts": { "test": "node test-demo.cjs" },
+  "devDependencies": { "playwright": "1.64.1" }
+}

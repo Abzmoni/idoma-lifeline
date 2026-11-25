@@ -1,6 +1,8 @@
 import db from './db';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
+let dataStatus = { cached: true, updatedAt: null };
+export const getDataStatus = () => dataStatus;
 
 // Helper to determine if we are online
 export function isOnline() {
@@ -20,11 +22,13 @@ async function request(path, options = {}) {
   }
 
   const url = `${API_BASE}${path}`;
-  const response = await fetch(url, { ...options, headers });
+  const response = await fetch(url, { signal: AbortSignal.timeout(12000), ...options, headers });
   
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.error || `HTTP error ${response.status}`);
+    const error = new Error(errorData.error || `HTTP error ${response.status}`);
+    error.status = response.status;
+    throw error;
   }
   
   return response.json();
@@ -47,24 +51,33 @@ export const api = {
         
         // Cache verified resources in IndexedDB when fetched successfully
         if (!type && !bbox && (!status || status === 'verified')) {
-          await db.resources.clear();
-          await db.resources.bulkAdd(data);
+          const updatedAt = new Date().toISOString();
+          await db.transaction('rw', db.resources, db.metadata, async () => {
+            await db.resources.clear();
+            await db.resources.bulkPut(data);
+            await db.metadata.put({ key: 'resources', updatedAt });
+          });
+          dataStatus = { cached: false, updatedAt };
         }
         
         return data;
       } catch (err) {
         console.warn('API error, falling back to IndexedDB:', err);
-        return db.resources.toArray();
+        if (status && status !== 'verified') throw err;
       }
-    } else {
+    }
       // Offline: read from IndexedDB
       console.log('Offline: loading resources from IndexedDB');
       let cached = await db.resources.toArray();
+      dataStatus = { cached: true, updatedAt: (await db.metadata.get('resources'))?.updatedAt || null };
       if (type) {
         cached = cached.filter(r => r.type === type);
       }
+      if (bbox) {
+        const [west, south, east, north] = bbox.split(',').map(Number);
+        cached = cached.filter(r => r.lng >= west && r.lng <= east && r.lat >= south && r.lat <= north);
+      }
       return cached;
-    }
   },
 
   async getResource(id) {
@@ -86,20 +99,19 @@ export const api = {
 
   // Reports
   async submitReport(data) {
-    if (isOnline()) {
-      return request('/api/reports', {
-        method: 'POST',
-        body: JSON.stringify(data)
-      });
-    } else {
-      // Offline: queue in IndexedDB
-      console.log('Offline: queueing report in IndexedDB');
-      const id = await db.reports_queue.add({
-        ...data,
-        created_at: new Date().toISOString()
-      });
-      return { id, status: 'pending', offline: true };
+    // Persist before transmission: a lost response must not lose or duplicate a report.
+    const report = { ...data, client_request_id: crypto.randomUUID(), created_at: new Date().toISOString() };
+    const id = await db.reports_queue.add(report);
+    window.dispatchEvent(new Event('idoma-lifeline_queue'));
+    if (isOnline()) await syncOfflineReports();
+    const remaining = await db.reports_queue.get(id);
+    if (remaining?.sync_error) {
+      // The open form retains the user's input so it can be corrected and submitted again.
+      await db.reports_queue.delete(id);
+      window.dispatchEvent(new Event('idoma-lifeline_queue'));
+      throw new Error(remaining.sync_error);
     }
+    return { id, status: 'pending', offline: Boolean(remaining) };
   },
 
   async getReports(status) {
@@ -199,42 +211,40 @@ export const api = {
   }
 };
 
-// Sync offline reports queue when back online
-export async function syncOfflineReports() {
-  const queue = await db.reports_queue.toArray();
-  if (queue.length === 0) return 0;
-
-  console.log(`Syncing ${queue.length} offline reports...`);
-  let syncedCount = 0;
-
-  for (const report of queue) {
-    try {
-      const { id, ...reportData } = report;
-      await request('/api/reports', {
-        method: 'POST',
-        body: JSON.stringify(reportData)
-      });
-      await db.reports_queue.delete(id);
-      syncedCount++;
-    } catch (err) {
-      console.error('Failed to sync report:', report, err);
-      // Keep it in queue to retry later
-    }
-  }
-
-  return syncedCount;
-}
-
-// Add event listener to auto-sync when network returns
-if (typeof window !== 'undefined') {
-  window.addEventListener('online', () => {
-    console.log('Network back online! Triggering background sync...');
-    syncOfflineReports().then(count => {
-      if (count > 0) {
-        console.log(`Auto-synced ${count} reports.`);
-        // Dispatch custom event to let UI know database sync completed
-        window.dispatchEvent(new CustomEvent('idoma-lifeline_synced'));
+// Serialize within a tab; Web Locks also serialize across tabs when available.
+let syncPromise = null;
+export function syncOfflineReports() {
+  if (syncPromise) return syncPromise;
+  const run = async () => {
+    if (!isOnline()) return 0;
+    let count = 0;
+    for (const report of await db.reports_queue.toArray()) {
+      if (report.sync_error) continue;
+      const client_request_id = report.client_request_id || crypto.randomUUID();
+      await db.reports_queue.update(report.id, { client_request_id });
+      const { id, ...data } = { ...report, client_request_id };
+      try {
+        await request('/api/reports', { method: 'POST', body: JSON.stringify(data) });
+        await db.reports_queue.delete(id);
+        count++;
+      } catch (error) {
+        if (error.status >= 400 && error.status < 500 && error.status !== 429) {
+          await db.reports_queue.update(id, { sync_error: error.message });
+        }
+        break;
       }
-    });
-  });
+    }
+    window.dispatchEvent(new CustomEvent('idoma-lifeline_synced', { detail: { count } }));
+    return count;
+  };
+  syncPromise = (navigator.locks ? navigator.locks.request('lifeline-report-sync', run) : run())
+    .finally(() => { syncPromise = null; });
+  return syncPromise;
+}
+if (typeof window !== 'undefined') {
+  const retry = () => syncOfflineReports().catch(() => {});
+  window.addEventListener('online', retry);
+  window.addEventListener('focus', retry);
+  setTimeout(retry, 0);
+  setInterval(retry, 30000);
 }

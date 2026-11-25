@@ -3,6 +3,15 @@ import { useNavigate } from 'react-router-dom';
 import L from 'leaflet';
 import { api } from '../api';
 
+const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+const formatMinutes = minutes => {
+  if (minutes == null) return '—';
+  if (minutes < 60) return `${minutes} min`;
+  if (minutes < 48 * 60) return `${(minutes / 60).toFixed(1)} h`;
+  return `${Math.round(minutes / 1440)} d`;
+};
+
 export default function AdminDashboardPage() {
   const navigate = useNavigate();
   const [currentUser, setCurrentUser] = useState(null);
@@ -19,6 +28,7 @@ export default function AdminDashboardPage() {
   const [loading, setLoading] = useState(true);
   
   // Simulator and Tab states
+  const [notice, setNotice] = useState('');
   const [activeTab, setActiveTab] = useState('queue'); // 'queue', 'simulator', 'logs'
   const [simMode, setSimMode] = useState('sms'); // 'sms' or 'ussd'
   const [simPhone, setSimPhone] = useState('+2348099887766');
@@ -87,15 +97,21 @@ export default function AdminDashboardPage() {
     if (!adminMapInstance.current && adminMapRef.current) {
       adminMapInstance.current = L.map(adminMapRef.current, {
         zoomControl: true,
-        attributionControl: false
+        attributionControl: true
       }).setView([7.1904, 8.1345], 11);
 
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19
+        maxZoom: 19, attribution: '&copy; OpenStreetMap contributors'
       }).addTo(adminMapInstance.current);
 
       markersLayer.current = L.layerGroup().addTo(adminMapInstance.current);
     }
+  }, [loading]);
+
+  useEffect(() => () => {
+    adminMapInstance.current?.remove();
+    adminMapInstance.current = null;
+    markersLayer.current = null;
   }, []);
 
   // Draw markers on Admin Map (includes pending, verified, hazards, etc.)
@@ -160,9 +176,9 @@ export default function AdminDashboardPage() {
       // Popup showing edit link
       marker.bindPopup(`
         <div class="p-2">
-          <strong class="block text-sm font-bold text-ink">${res.name}</strong>
+          <strong class="block text-sm font-bold text-ink">${escapeHtml(res.name)}</strong>
           <span class="inline-block text-[10px] bg-slate-100 text-slate-700 px-1 border uppercase tracking-wider mb-2 font-mono">${res.type} (${res.status})</span>
-          <p class="text-xs text-on-surface-variant mb-2">${res.description || 'No description'}</p>
+          <p class="text-xs text-on-surface-variant mb-2">${escapeHtml(res.description || 'No description')}</p>
           <button onclick="window.location.hash = '/admin/resources/${res.id}'" class="w-full bg-[#E8600C] text-white text-[10px] font-bold py-1 px-2 border-b-2 border-[#a23f00] text-center uppercase">
             Edit Details
           </button>
@@ -208,7 +224,7 @@ export default function AdminDashboardPage() {
         <div class="p-2">
           <strong class="block text-sm font-bold text-ink">New ${rep.type.toUpperCase()} Report</strong>
           <span class="inline-block text-[10px] bg-amber-100 text-amber-700 px-1 border uppercase tracking-wider mb-2">PENDING REPORT</span>
-          <p class="text-xs text-on-surface-variant mb-2">${rep.name}: ${rep.description || 'No description'}</p>
+          <p class="text-xs text-on-surface-variant mb-2">${escapeHtml(rep.name)}: ${escapeHtml(rep.description || 'No description')}</p>
         </div>
       `);
       markersLayer.current.addLayer(marker);
@@ -220,8 +236,9 @@ export default function AdminDashboardPage() {
     try {
       await api.approveReport(id);
       await loadDashboardData();
+      setNotice('Report approved. It is now available on the public map.');
     } catch (error) {
-      alert(`Approval failed: ${error.message}`);
+      setNotice(`Approval failed: ${error.message}`);
     }
   };
 
@@ -230,7 +247,7 @@ export default function AdminDashboardPage() {
       await api.rejectReport(id);
       await loadDashboardData();
     } catch (error) {
-      alert(`Rejection failed: ${error.message}`);
+      setNotice(`Rejection failed: ${error.message}`);
     }
   };
 
@@ -245,7 +262,7 @@ export default function AdminDashboardPage() {
       await loadDashboardData();
     } catch (error) {
       console.error('Error simulating SMS:', error);
-      alert('SMS webhook simulation failed');
+      setNotice('SMS webhook simulation failed');
     }
   };
 
@@ -266,7 +283,7 @@ export default function AdminDashboardPage() {
       setUssdScreenText(reply);
     } catch (error) {
       console.error('Error starting USSD:', error);
-      alert('USSD webhook simulation failed');
+      setNotice('USSD webhook simulation failed');
     }
   };
 
@@ -293,7 +310,7 @@ export default function AdminDashboardPage() {
       await loadDashboardData();
     } catch (error) {
       console.error('Error sending USSD input:', error);
-      alert('USSD input simulation failed');
+      setNotice('USSD input simulation failed');
     }
   };
 
@@ -311,10 +328,10 @@ export default function AdminDashboardPage() {
   const handleTriggerSeed = async () => {
     try {
       const res = await api.triggerSeed();
-      alert(res.message);
+      setNotice(res.message);
       await loadDashboardData();
     } catch (error) {
-      alert(`Seeding failed: ${error.message}`);
+      setNotice(`Seeding failed: ${error.message}`);
     }
   };
 
@@ -329,6 +346,7 @@ export default function AdminDashboardPage() {
   return (
     <div className="min-h-screen lg:h-screen w-full flex flex-col font-body-md bg-[#F1F2EE] antialiased text-ink">
       
+      {notice && <div role="status" className="p-3 bg-orange-50 border-b text-sm">{notice}<button className="ml-4 underline" onClick={() => setNotice('')}>Dismiss</button></div>}
       {/* Top Header */}
       <header className="flex justify-between items-center px-3 sm:px-6 h-touch-target bg-white border-b border-outline overflow-hidden">
         <div className="flex items-center space-x-2 sm:space-x-3 flex-shrink-0 mr-2">
@@ -383,6 +401,28 @@ export default function AdminDashboardPage() {
               <span className="text-[10px] uppercase text-on-surface-variant font-bold">Reports (24h)</span>
             </div>
           </div>
+
+          {/* Impact measures: the pilot KPIs, computed live from reports and resources */}
+          {stats.impact && (
+            <div className="grid grid-cols-4 border-b border-outline bg-white text-center font-data-sm divide-x divide-outline" aria-label="Impact measures">
+              <div className="p-2" title="Median time from report to coordinator decision">
+                <span className="block text-lg font-bold text-ink">{formatMinutes(stats.impact.median_review_minutes)}</span>
+                <span className="text-[10px] uppercase text-on-surface-variant font-bold">Median review</span>
+              </div>
+              <div className="p-2" title="Reviewed reports decided within 24 hours (pilot target 90%)">
+                <span className="block text-lg font-bold text-ink">{stats.impact.reviewed_within_24h_pct == null ? '—' : stats.impact.reviewed_within_24h_pct + '%'}</span>
+                <span className="text-[10px] uppercase text-on-surface-variant font-bold">Reviewed &lt;24h</span>
+              </div>
+              <div className="p-2" title={`Reports by channel: app ${stats.impact.reports_by_source.app || 0}, SMS/USSD ${stats.impact.reports_by_source.sms || 0}, coordinator ${stats.impact.reports_by_source.admin || 0}`}>
+                <span className="block text-lg font-bold text-ink">{stats.impact.basic_phone_share_pct == null ? '—' : stats.impact.basic_phone_share_pct + '%'}</span>
+                <span className="text-[10px] uppercase text-on-surface-variant font-bold">Via SMS/USSD</span>
+              </div>
+              <div className="p-2" title="Verified records not re-checked in 72 hours">
+                <span className={`block text-lg font-bold ${stats.impact.stale_resources ? 'text-primary' : 'text-status-green'}`}>{stats.impact.stale_resources}</span>
+                <span className="text-[10px] uppercase text-on-surface-variant font-bold">Need re-check</span>
+              </div>
+            </div>
+          )}
 
           {/* Tabs */}
           <div className="flex border-b border-outline bg-white font-label-caps text-xs">
@@ -471,6 +511,7 @@ export default function AdminDashboardPage() {
                       </div>
 
                       {/* Immediate single click buttons */}
+                      <p className="text-xs mb-3">Public facility phone: {rep.public_contact || 'None provided. Reporter contact stays private.'}</p>
                       <div className="flex gap-2">
                         <button 
                           onClick={() => handleReject(rep.id)}
@@ -536,7 +577,7 @@ export default function AdminDashboardPage() {
                     SMS & USSD Gateway Simulator
                   </h2>
                   <p className="text-xs text-on-surface-variant mt-1">
-                    Test SMS queries, reports, or dial the interactive USSD interface locally.
+                    Simulation only: requests reach the prototype API. No real SMS is sent and no live shortcode is connected.
                   </p>
                 </div>
 

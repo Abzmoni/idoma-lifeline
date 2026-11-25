@@ -1,0 +1,11 @@
+tmp/
+output/
+tools/node_modules/
+tools/artifacts/
+**/node_modules/
+**/dist/
+templates/
+pitch/
+.agents/
+.claude/
+graphify-out/
