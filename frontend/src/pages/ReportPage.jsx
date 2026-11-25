@@ -1,339 +1,175 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import L from 'leaflet';
 import { api } from '../api';
-import { locate, accuracyLabel, PRECISE_LOCATION_METERS, validPoint } from '../location';
+import MapIcon, { iconMarkup } from '../components/MapIcon';
+import { useI18n } from '../i18n';
+import { quickLocate, lastKnownLocation, accuracyLabel, ageParts, validPoint, USABLE_LOCATION_METERS } from '../location';
+import '../report.css';
+
+// Three short steps for people under stress: what → where → (optional) details.
+// Location is found automatically: fresh GPS (works without data) → last known location on this phone → tap the map / choose a town.
+const TYPES = [
+  ['shelter', '#92502d'], ['water', '#166681'], ['medical', '#b73333'],
+  ['food', '#906917'], ['safe_zone', '#177767'], ['hazard', '#b73333'],
+];
+const TOWNS = [
+  ['Otukpo', 7.1904, 8.1345], ['Otukpo market', 7.193, 8.138], ['Adoka', 7.161, 7.93], ['Ugbokolo', 6.985, 7.98],
+  ['Okpoga', 7.05, 7.8], ['Otukpa', 7.1, 7.65], ['Igumale', 6.8, 7.9667], ['Oju', 6.85, 8.4167],
+  ['Obarike-Ito', 7.0167, 8.3333], ['Idekpa', 7.38, 8.0], ['Ugbokpo (Apa)', 7.65, 7.9], ['Obagaji (Agatu)', 7.93, 7.87],
+];
+const DEFAULT_CENTRE = [7.1904, 8.1345];
 
 export default function ReportPage() {
   const navigate = useNavigate();
-  const defaultLat = 7.1904;
-  const defaultLng = 8.1345;
-  const [type, setType] = useState('shelter');
+  const { t } = useI18n();
+  const [step, setStep] = useState(1);
+  const [type, setType] = useState('');
+  const [place, setPlace] = useState(null); // { lat, lng, source: 'gps'|'last'|'map'|'town', accuracy?, at?, town? }
+  const [finding, setFinding] = useState(true);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [lat, setLat] = useState(defaultLat);
-  const [lng, setLng] = useState(defaultLng);
   const [reporterContact, setReporterContact] = useState('');
   const [publicContact, setPublicContact] = useState('');
-  const [message, setMessage] = useState('');
-  const [locationConfirmed, setLocationConfirmed] = useState(false);
-  const [locating, setLocating] = useState(false);
-  const locationRequest = useRef(0);
-  const accuracyCircle = useRef(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isOffline, setIsOffline] = useState(!navigator.onLine);
+  const [error, setError] = useState('');
+  const [sending, setSending] = useState(false);
+  const [offline, setOffline] = useState(!navigator.onLine);
+  const mapNode = useRef(null), map = useRef(null), marker = useRef(null), userMoved = useRef(false);
 
-  const miniMapRef = useRef(null);
-  const miniMapInstance = useRef(null);
-  const markerRef = useRef(null);
-
-  // Monitor network status
   useEffect(() => {
-    const goOnline = () => setIsOffline(false);
-    const goOffline = () => setIsOffline(true);
-
-    window.addEventListener('online', goOnline);
-    window.addEventListener('offline', goOffline);
-
-    return () => {
-      window.removeEventListener('online', goOnline);
-      window.removeEventListener('offline', goOffline);
-    };
+    const on = () => setOffline(false), off = () => setOffline(true);
+    window.addEventListener('online', on); window.addEventListener('offline', off);
+    return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off); };
   }, []);
 
-  // Initialize mini map for location picking
-  useEffect(() => {
-    if (!miniMapInstance.current && miniMapRef.current) {
-      miniMapInstance.current = L.map(miniMapRef.current, {
-        zoomControl: true,
-        attributionControl: true
-      }).setView([defaultLat, defaultLng], 12);
-
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19, attribution: '&copy; OpenStreetMap contributors'
-      }).addTo(miniMapInstance.current);
-
-      const locatorIcon = L.divIcon({
-        className: 'custom-locator-marker',
-        html: `
-          <div class="flex flex-col items-center">
-            <div class="bg-primary p-2 rounded-full border-2 border-white shadow-lg flex items-center justify-center w-10 h-10 text-white cursor-grab active:cursor-grabbing">
-              <span class="material-symbols-outlined text-[20px] font-bold">location_searching</span>
-            </div>
-            <div class="w-2 h-2 bg-primary rounded-full -mt-1 shadow-sm border border-white"></div>
-          </div>
-        `,
-        iconSize: [40, 46],
-        iconAnchor: [20, 46]
-      });
-
-      // Add a draggable marker
-      markerRef.current = L.marker([defaultLat, defaultLng], { draggable: true, icon: locatorIcon }).addTo(miniMapInstance.current);
-      
-      markerRef.current.on('dragend', () => {
-        locationRequest.current++; setLocating(false); setLocationConfirmed(true); setMessage('Location confirmed by your pin.');
-        accuracyCircle.current?.remove();
-        const position = markerRef.current.getLatLng();
-        setLat(position.lat);
-        setLng(position.lng);
-      });
-
-      miniMapInstance.current.on('click', (e) => {
-        locationRequest.current++; setLocating(false); setLocationConfirmed(true); setMessage('Location confirmed by your pin.');
-        accuracyCircle.current?.remove();
-        const { lat: clickLat, lng: clickLng } = e.latlng;
-        setLat(clickLat);
-        setLng(clickLng);
-        markerRef.current.setLatLng([clickLat, clickLng]);
-      });
-    }
-    const instance = miniMapInstance.current;
-    return () => {
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-      locationRequest.current++;
-      instance?.remove(); miniMapInstance.current = null; markerRef.current = null;
-    };
-  }, []);
-
-  const handleUseMyLocation = async () => {
-    const id = ++locationRequest.current;
-    setLocating(true); setLocationConfirmed(false); setMessage('Requesting a fresh location…');
+  const findMe = async () => {
+    setFinding(true);
     try {
-      const point = await locate();
-      if (id !== locationRequest.current) return;
-      setLat(point.lat); setLng(point.lng);
-      markerRef.current.setLatLng([point.lat, point.lng]);
-      accuracyCircle.current?.remove();
-      accuracyCircle.current = L.circle([point.lat, point.lng], { radius: point.accuracy, color: '#005da8', fillOpacity: 0.08 }).addTo(miniMapInstance.current);
-      miniMapInstance.current.fitBounds(accuracyCircle.current.getBounds(), { padding: [25, 25], maxZoom: 16 });
-      setMessage('Browser accuracy: about ' + accuracyLabel(point.accuracy) + '. ' + (point.accuracy > PRECISE_LOCATION_METERS ? 'This is approximate. Move the pin to the resource location, then confirm it.' : 'Check the resource location and confirm the pin.'));
-    } catch (error) { if (id === locationRequest.current) setMessage(error.message); }
-    finally { if (id === locationRequest.current) setLocating(false); }
+      const point = await quickLocate();
+      if (!userMoved.current && point.accuracy <= USABLE_LOCATION_METERS) setPlace({ ...point, source: 'gps' });
+      else if (!userMoved.current) throw new Error('imprecise');
+    } catch {
+      const last = lastKnownLocation();
+      if (!userMoved.current && last) setPlace({ ...last, source: 'last' });
+    } finally { setFinding(false); }
   };
+  // Start looking as soon as the page opens, so the pin is ready by step 2.
+  useEffect(() => { findMe(); }, []);
 
-  const handleSubmit = async (e) => {
+  // The map exists only on step 2.
+  useEffect(() => {
+    if (step !== 2 || !mapNode.current) return;
+    const instance = L.map(mapNode.current, { zoomControl: true }).setView(DEFAULT_CENTRE, 12);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }).addTo(instance);
+    const color = (TYPES.find(([id]) => id === type) || TYPES[0])[1];
+    const icon = L.divIcon({ className: 'resource-pin report-pin', html: `<span style="background:${color}">${iconMarkup(type || 'pin')}</span><i style="border-top-color:${color}"></i>`, iconSize: [44, 54], iconAnchor: [22, 54] });
+    const moveTo = (lat, lng) => { userMoved.current = true; setPlace({ lat, lng, source: 'map' }); };
+    marker.current = L.marker(DEFAULT_CENTRE, { draggable: true, icon, opacity: 0 }).addTo(instance);
+    marker.current.on('dragend', () => { const p = marker.current.getLatLng(); moveTo(p.lat, p.lng); });
+    instance.on('click', e => moveTo(e.latlng.lat, e.latlng.lng));
+    map.current = instance;
+    return () => { instance.remove(); map.current = null; marker.current = null; };
+  }, [step, type]);
+
+  // Keep the pin and view in step with the chosen place.
+  useEffect(() => {
+    if (!map.current || !marker.current) return;
+    if (!place) { marker.current.setOpacity(0); return; }
+    marker.current.setOpacity(1).setLatLng([place.lat, place.lng]);
+    if (place.source !== 'map') map.current.setView([place.lat, place.lng], navigator.onLine ? (place.source === 'town' ? 14 : 16) : 13, { animate: false });
+  }, [place, step]);
+
+  const chooseType = id => { setType(id); setStep(2); };
+  const chooseTown = value => {
+    const town = TOWNS.find(([label]) => label === value);
+    if (!town) return;
+    userMoved.current = true;
+    setPlace({ lat: town[1], lng: town[2], source: 'town', town: town[0] });
+  };
+  const ago = at => { const a = ageParts(at); return `${a.n} ${t('unit.' + a.unit)}`; };
+  const status = finding && !place ? t('loc.finding')
+    : !place ? t('loc.none')
+    : place.source === 'gps' ? t('loc.gps', { acc: accuracyLabel(place.accuracy) })
+    : place.source === 'last' ? t('loc.last', { age: ago(place.at) })
+    : place.source === 'town' ? t('loc.town', { town: place.town })
+    : t('loc.map');
+  const where = !place ? '' : place.source === 'town' ? t('report.where.town', { town: place.town }) : t('report.where.' + place.source);
+
+  const submit = async e => {
     e.preventDefault();
-    if (!name.trim()) return setMessage('Resource name is required.');
-    if (!locationConfirmed || !validPoint({ lat, lng })) return setMessage('Please tap the map, move the pin or confirm the location before submitting.');
-    
-    setIsSubmitting(true);
-
-    const reportData = {
-      type,
-      name,
-      description,
-      location: { lat: parseFloat(lat), lng: parseFloat(lng) },
-      reporter_contact: reporterContact,
-      public_contact: publicContact,
-      source: 'app'
-    };
-
+    if (!type || !place || !validPoint(place)) { setStep(!type ? 1 : 2); return; }
+    setSending(true); setError('');
+    // Tell coordinators how the location was found so they can judge its accuracy.
+    const locationNote = place.source === 'gps' ? `Location: phone GPS, about ${accuracyLabel(place.accuracy)}`
+      : place.source === 'last' ? `Location: last known position, ${ago(place.at)} old`
+      : place.source === 'town' ? `Location: town chosen (${place.town})` : 'Location: pin placed on map';
     try {
-      const res = await api.submitReport(reportData);
-      setIsSubmitting(false);
-
-      if (res.offline) {
-        // Submitted offline, show confirmation page
-        navigate('/offline-success');
-      } else {
-        navigate('/offline-success?sent=1');
-      }
+      const res = await api.submitReport({
+        type,
+        name: name.trim() || t('report.autoName', { type: t('rtype.' + type) }),
+        description: [description.trim(), `(${locationNote})`].filter(Boolean).join(' '),
+        location: { lat: place.lat, lng: place.lng },
+        reporter_contact: reporterContact.trim(),
+        public_contact: publicContact.trim(),
+        source: 'app',
+      });
+      navigate(res.offline ? '/offline-success' : '/offline-success?sent=1');
     } catch (err) {
-      console.error(err);
-      setIsSubmitting(false);
-      setMessage(err.message || 'Could not save your report. Please try again.');
-    }
+      setError(err.message || t('report.error'));
+    } finally { setSending(false); }
   };
 
-  return (
-    <div className="min-h-screen bg-[#F1F2EE] text-on-background p-margin-mobile md:p-margin-desktop antialiased font-body-md">
-      
-      <main className="w-full max-w-[560px] bg-white border border-outline mx-auto shadow-none">
-        
-        {/* Header indicator */}
-        <div className="h-1 w-full bg-primary"></div>
-        
-        <div className="p-6 md:p-8">
-          
-          {/* Header */}
-          <div className="flex items-center justify-between mb-8 pb-4 border-b border-outline">
-            <div className="flex items-center gap-2">
-              <button onClick={() => navigate(-1)} className="text-on-surface-variant hover:text-ink">
-                <span className="material-symbols-outlined text-[24px]">arrow_back</span>
-              </button>
-              <h1 className="font-headline-sm text-headline-sm text-on-surface">Submit Resource Report</h1>
-            </div>
-            {isOffline && (
-              <span className="font-label-caps text-[10px] bg-error/10 text-error px-2 py-0.5 rounded border border-error/30 font-bold">
-                OFFLINE MODE
-              </span>
-            )}
-          </div>
+  const back = () => (step === 1 ? navigate('/') : setStep(step - 1));
 
-          <form onSubmit={handleSubmit} className="space-y-6">
-            {message && <p role="status" className="p-3 bg-orange-50 border border-orange-200 text-sm">{message}</p>}
-            
-            {/* Type selection grid */}
-            <fieldset className="bg-surface p-4 border border-outline-variant rounded">
-              <legend className="font-label-caps text-label-caps text-on-surface mb-3 uppercase">Resource Classification *</legend>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                {[
-                  { id: 'shelter', name: 'Shelter', icon: 'home' },
-                  { id: 'water', name: 'Water', icon: 'water_drop' },
-                  { id: 'medical', name: 'Medical', icon: 'local_hospital' },
-                  { id: 'food', name: 'Food', icon: 'restaurant' },
-                  { id: 'safe_zone', name: 'Safe Zone', icon: 'gpp_good' },
-                  { id: 'hazard', name: 'Hazard', icon: 'warning', isError: true }
-                ].map(cat => (
-                  <label key={cat.id} className="type-chip cursor-pointer">
-                    <input 
-                      className="sr-only" 
-                      type="radio" 
-                      name="resource_type" 
-                      required
-                      value={cat.id} 
-                      checked={type === cat.id}
-                      onChange={() => setType(cat.id)}
-                    />
-                    <div className={`flex flex-col items-center justify-center p-3 border rounded transition-colors h-24 hover:bg-surface-container-high ${type === cat.id ? 'bg-primary text-white border-primary' : 'border-outline-variant bg-surface-container-lowest text-on-surface'}`}>
-                      <span className={`material-symbols-outlined text-[32px] mb-2 ${cat.isError && type !== cat.id ? 'text-error' : ''}`} style={{ fontVariationSettings: type === cat.id ? "'FILL' 1" : "'FILL' 0" }}>
-                        {cat.icon}
-                      </span>
-                      <span className="font-data-sm text-data-sm uppercase tracking-wide">{cat.name}</span>
-                    </div>
-                  </label>
-                ))}
-              </div>
-            </fieldset>
+  return <div className="report-flow">
+    <header className="report-top">
+      <button type="button" className="report-back" onClick={back} aria-label={t('report.back')}><MapIcon name="back" /></button>
+      <div><strong>{t('report.title')}</strong><span>{t('report.step', { n: step })}</span></div>
+      {offline && <span className="report-offline">{t('status.offline')}</span>}
+    </header>
+    <div className="report-progress" aria-hidden="true">{[1, 2, 3].map(n => <i key={n} className={n <= step ? 'on' : ''} />)}</div>
 
-            {/* Name */}
-            <div>
-              <label className="block font-label-caps text-label-caps uppercase text-on-surface-variant mb-2">
-                Resource Title / Landmark Name
-              </label>
-              <input 
-                type="text" 
-                placeholder="e.g. St. Mary's Secondary School Hall" 
-                value={name} 
-                onChange={(e) => setName(e.target.value)}
-                required
-              />
-            </div>
+    {step === 1 && <section className="report-step">
+      <h1>{t('report.q1')}</h1>
+      <p className="report-hint">{t('report.q1hint')}</p>
+      <div className="report-types">
+        {TYPES.map(([id, color]) => <button key={id} type="button" className={type === id ? 'chosen' : ''} onClick={() => chooseType(id)}>
+          <span className="report-type-icon" style={{ background: color }}><MapIcon name={id} /></span>{t('rtype.' + id)}
+        </button>)}
+      </div>
+    </section>}
 
-            {/* Description */}
-            <div>
-              <label className="block font-label-caps text-label-caps uppercase text-on-surface-variant mb-2">
-                Situation Description & Capacity Info
-              </label>
-              <textarea 
-                placeholder="e.g. Clean borehole active. Run by volunteers. Open daily. Safe drinking water. Classrooms open for up to 100 people." 
-                rows="3"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-              />
-            </div>
+    {step === 2 && <section className="report-step">
+      <h1>{t('report.q2')}</h1>
+      <p className={'report-status ' + (place ? 'ok' : finding ? '' : 'warn')} role="status"><MapIcon name={place ? 'pin' : 'location'} />{status}</p>
+      <div ref={mapNode} className="report-map" aria-label={t('loc.adjust')} />
+      <p className="report-hint">{t('loc.adjust')}</p>
+      <div className="report-row">
+        <select aria-label={t('loc.townChoose')} value={place?.source === 'town' ? place.town : ''} onChange={e => chooseTown(e.target.value)}>
+          <option value="">{t('loc.townChoose')}</option>
+          {TOWNS.map(([label]) => <option key={label} value={label}>{label}</option>)}
+        </select>
+        <button type="button" className="report-secondary" disabled={finding} onClick={() => { userMoved.current = false; findMe(); }}>
+          <MapIcon name="location" />{finding ? t('loc.finding') : t('loc.retry')}
+        </button>
+      </div>
+      <button type="button" className="report-primary" disabled={!place} onClick={() => setStep(3)}><MapIcon name="check" />{t('report.here')}</button>
+    </section>}
 
-            {/* Coordinates / Map Selection */}
-            <div>
-              <div className="flex justify-between items-center mb-2">
-                <label className="block font-label-caps text-label-caps uppercase text-on-surface-variant">
-                  Pinpoint Location on Map
-                </label>
-                <button 
-                  type="button" 
-                  onClick={handleUseMyLocation}
-                  className="text-xs font-bold text-primary hover:underline flex items-center gap-0.5"
-                >
-                  <span className="material-symbols-outlined text-[14px]">my_location</span>
-                  {locating ? 'Locating…' : 'Use my location'}
-                </button>
-              </div>
-
-              {/* Mini Map */}
-              <div ref={miniMapRef} className="h-[220px] w-full border border-border-grey mb-3 z-0"></div>
-              <p className="text-xs mb-2">Tap the map or move the pin to confirm the exact resource location. Browser location is an estimate.</p>
-              <button type="button" onClick={() => { setLocationConfirmed(true); setMessage('Pin location confirmed by you.'); }} className="border p-2 text-sm">Confirm this pin</button>
-
-              {/* Coordinates Grid */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block font-label-caps text-[10px] uppercase text-on-surface-variant mb-1">Latitude</label>
-                  <input 
-                    type="number" 
-                    step="0.0001" 
-                    value={lat} 
-                    onChange={(e) => {
-                      const v = parseFloat(e.target.value);
-                      setLat(v || 0);
-                      setLocationConfirmed(false);
-                      if (markerRef.current) markerRef.current.setLatLng([v || 0, lng]);
-                    }}
-                    className="font-data-lg text-sm bg-white"
-                  />
-                </div>
-                <div>
-                  <label className="block font-label-caps text-[10px] uppercase text-on-surface-variant mb-1">Longitude</label>
-                  <input 
-                    type="number" 
-                    step="0.0001" 
-                    value={lng} 
-                    onChange={(e) => {
-                      const v = parseFloat(e.target.value);
-                      setLng(v || 0);
-                      setLocationConfirmed(false);
-                      if (markerRef.current) markerRef.current.setLatLng([lat, v || 0]);
-                    }}
-                    className="font-data-lg text-sm bg-white"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Contact */}
-            <div>
-              <label className="block font-label-caps text-label-caps uppercase text-on-surface-variant mb-2">
-                Your phone number — private (optional)
-              </label>
-              <input 
-                type="tel" 
-                placeholder="e.g. +2348012345678" 
-                value={reporterContact} 
-                onChange={(e) => setReporterContact(e.target.value)}
-              />
-              <p className="mt-1 text-[11px] text-on-surface-variant italic">
-                Note: Reporter details are strictly visible to coordinators and will not be shared publicly.
-              </p>
-            </div>
-
-            <div>
-              <label className="block text-sm mb-2" htmlFor="public-contact">Facility phone — public (optional)</label>
-              <input id="public-contact" type="tel" value={publicContact} onChange={e => setPublicContact(e.target.value)} placeholder="Only a number authorised for public calls" pattern="[+0-9 ()-]{5,25}" />
-              <p className="mt-1 text-xs">This separate number will appear on the public map after review. Leave it blank to keep all contact details private.</p>
-            </div>
-
-            {/* Actions */}
-            <div className="pt-4 flex gap-4">
-              <button 
-                type="button" 
-                onClick={() => navigate('/')}
-                className="flex-1 h-touch-target border-2 border-outline hover:bg-surface-container-high font-label-caps text-label-caps uppercase text-center flex items-center justify-center"
-              >
-                Cancel
-              </button>
-              <button 
-                type="submit" 
-                disabled={isSubmitting}
-                className="flex-1 h-touch-target bg-primary hover:bg-ink text-white font-label-caps text-label-caps uppercase tracking-wide border-b-4 border-[#a23f00] active:border-b-0 active:translate-y-0.5 transition-all flex items-center justify-center"
-              >
-                {isSubmitting ? 'Submitting...' : isOffline ? 'Save Offline' : 'Submit Report'}
-              </button>
-            </div>
-
-          </form>
-
-        </div>
-      </main>
-
-    </div>
-  );
+    {step === 3 && <form className="report-step" onSubmit={submit}>
+      <h1>{t('report.q3')}</h1>
+      <p className="report-summary"><span className="report-type-icon small" style={{ background: (TYPES.find(([id]) => id === type) || TYPES[0])[1] }}><MapIcon name={type} /></span>{t('rtype.' + type)} · {where}</p>
+      <p className="report-hint">{t('report.optional')}</p>
+      {error && <p className="report-status warn" role="alert">{error}</p>}
+      <label>{t('report.name')}<input value={name} onChange={e => setName(e.target.value)} placeholder={t('report.namePh')} maxLength={180} /></label>
+      <label>{t('report.desc')}<textarea rows="3" value={description} onChange={e => setDescription(e.target.value)} placeholder={t('report.descPh')} maxLength={2800} /></label>
+      <label>{t('report.phone')}<input type="tel" inputMode="tel" value={reporterContact} onChange={e => setReporterContact(e.target.value)} placeholder="080…" maxLength={60} />
+        <small><MapIcon name="lock" />{t('report.phoneNote')}</small></label>
+      <details className="report-more"><summary>{t('report.more')}</summary>
+        <label>{t('report.publicPhone')}<input type="tel" inputMode="tel" value={publicContact} onChange={e => setPublicContact(e.target.value)} pattern="[+0-9 ()-]{5,25}" /><small>{t('report.publicNote')}</small></label>
+      </details>
+      {offline && <p className="report-status">{t('report.saveNote')}</p>}
+      <button type="submit" className="report-primary" disabled={sending}>{sending ? t('report.sending') : t(offline ? 'report.save' : 'report.send')}</button>
+    </form>}
+  </div>;
 }

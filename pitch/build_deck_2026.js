@@ -226,7 +226,7 @@ function shot(s, file, x, y, w, h, alt, dark = false) {
     const feats = [
       ["LuLayers", SHELTER, "Six need categories", "Shelter, water, medical, food, hazards"],
       ["LuList", WATER, "List view with capacity", "Distance, contacts, last-verified time"],
-      ["LuMapPin", ORANGE, "Report in under a minute", "Pin confirmation, no sign-up needed"],
+      ["LuMapPin", ORANGE, "Report in three taps", "Location found automatically, even offline"],
       ["LuWifiOff", INK, "Works offline", "Saved data; reports queue and auto-sync"],
       ["LuRoute", MEDICAL, "Hazard-checked directions", "Warns when a hazard is on the route"],
       ["LuLayoutDashboard", SAFE, "Coordinator dashboard", "Approve, edit, stats and SMS logs"],
@@ -237,7 +237,7 @@ function shot(s, file, x, y, w, h, alt, dark = false) {
       tx(s, feats[i][2], { x: 8.85, y, w: 3.85, h: 0.33, fontSize: 16, bold: true });
       tx(s, feats[i][3], { x: 8.85, y: y + 0.35, w: 3.85, h: 0.35, fontSize: 13, color: MUTED });
     }
-    s.addNotes("This is not a mock-up. It is a working progressive web app: six need categories, a list view with capacity and verification times, one-minute reporting with no sign-up, full offline mode, hazard-checked directions, and a coordinator dashboard. Let me show you. (~25 seconds)");
+    s.addNotes("This is not a mock-up. It is a working progressive web app: six need categories, a list view with capacity and verification times, three-tap reporting with the location found automatically, even offline, full offline mode, hazard-checked directions, and a coordinator dashboard. Let me show you. (~25 seconds)");
   }
 
   // ================================================================ 6 DEMO
@@ -268,7 +268,7 @@ function shot(s, file, x, y, w, h, alt, dark = false) {
       tx(s, [{ text: (i + 1) + "  ", options: { bold: true, color: ORANGE } }, { text: demo[i], options: { color: WHITE } }],
         { x: x + 0.15, y: 6.25, w: 2.1, h: 0.55, fontSize: 14, valign: "middle" });
     }
-    s.addNotes("LIVE DEMO, 3 minutes (follow DEMO.md). 1) Choose Shelter, open list view, pick a facility: show verification time and capacity, then directions. 2) Disconnect the network and reload: the saved resources still load. 3) Report a water point and show 'Saved on this device' with the waiting-to-sync count. 4) Reconnect: the report syncs. In the coordinator tab, approve it, and it appears on the public map. 5) In the SMS simulator, send 'WATER Otukpo market'. Say clearly that the USSD/SMS gateway is simulated and a live shortcode is part of the pilot. If the network fails, play the backup video.");
+    s.addNotes("LIVE DEMO, 3 minutes (follow DEMO.md). 1) Choose Shelter, open list view, pick a facility: show verification time and capacity, then directions. 2) Disconnect the network and reload: the saved resources still load. 3) Tap Report, then Water: the pin is placed automatically. Tap 'Yes, it's here', then Save report, and show 'Saved on this device' with the waiting-to-sync count. 4) Reconnect: the report syncs. In the coordinator tab, approve it, and it appears on the public map. 5) In the SMS simulator, send 'WATER Otukpo market'. Say clearly that the USSD/SMS gateway is simulated and a live shortcode is part of the pilot. If the network fails, play the backup video.");
   }
 
   // ================================================================ 7 INNOVATION

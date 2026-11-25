@@ -126,11 +126,14 @@ async function api(endpoint, data, token) {
   await page.getByText(/Offline · Saved information/).waitFor();
   await page.getByRole('button', { name: '+ Report a resource or hazard', exact: true }).click();
   const reportName = 'Offline browser fixture';
-  await page.getByPlaceholder("e.g. St. Mary's Secondary School Hall").fill(reportName);
-  await page.getByRole('button', { name: 'Confirm this pin', exact: true }).click();
-  await page.getByRole('button', { name: 'Save Offline', exact: true }).click();
+  await page.getByRole('button', { name: 'Water', exact: true }).click();
+  // GPS works offline: the pin is placed automatically, no manual confirmation step.
+  await page.getByText(/The pin is on your location/).waitFor();
+  await page.getByRole('button', { name: "Yes, it's here" }).click();
+  await page.getByPlaceholder("e.g. St. Mary's Church hall").fill(reportName);
+  await page.getByRole('button', { name: 'Save report', exact: true }).click();
   await page.getByRole('heading', { name: 'Saved on this device.' }).waitFor();
-  await page.getByRole('button', { name: 'Return to Map Directory' }).click();
+  await page.getByRole('button', { name: 'Back to map' }).click();
   await page.getByText('1 report waiting to sync').waitFor();
   await page.screenshot({ path: path.join(__dirname, 'artifacts/offline.png') });
   // Reopen while online: startup sync must work without an online event in the old tab.
@@ -172,6 +175,27 @@ async function api(endpoint, data, token) {
   assert.equal(await reopened.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   assert.deepEqual(errors, []);
   console.log('PASS mobile layout width and browser runtime errors');
+
+  // No GPS available: the report pin falls back to the last known location saved on this phone,
+  // and with nothing saved the person is asked to tap the map or choose a town.
+  const noGps = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const lastPage = await noGps.newPage(); lastPage.on('pageerror', e => errors.push(e.message));
+  await lastPage.goto(base + '/#/report', { waitUntil: 'domcontentloaded' });
+  await lastPage.getByRole('button', { name: 'Shelter', exact: true }).click();
+  await lastPage.getByText(/couldn't find your location/).waitFor();
+  assert.equal(await lastPage.getByRole('button', { name: "Yes, it's here" }).isDisabled(), true);
+  await lastPage.getByRole('combobox', { name: 'Or choose a town' }).selectOption('Adoka');
+  await lastPage.getByText('Pin placed at Adoka.').waitFor();
+  await lastPage.evaluate(() => localStorage.setItem('lifeline-last-location', JSON.stringify({ lat: 7.19, lng: 8.13, accuracy: 15, at: Date.now() - 2 * 3600000 })));
+  await lastPage.reload({ waitUntil: 'domcontentloaded' });
+  await lastPage.getByRole('button', { name: 'Shelter', exact: true }).click();
+  await lastPage.getByText(/last known location \(2 h ago\)/).waitFor();
+  await lastPage.getByRole('button', { name: "Yes, it's here" }).click();
+  await lastPage.getByRole('heading', { name: 'Anything to add?' }).waitFor();
+  assert.equal(await lastPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  await noGps.close();
+  assert.deepEqual(errors, []);
+  console.log('PASS report location: last known fallback, town choice, no manual confirmation');
 })().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => {
   if (browser) await browser.close();
   if (server) server.kill();

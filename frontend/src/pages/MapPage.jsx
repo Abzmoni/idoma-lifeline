@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import L from 'leaflet';
 import { api, syncOfflineReports, getDataStatus } from '../api';
 import db from '../db';
-import { locate, accuracyLabel, PRECISE_LOCATION_METERS } from '../location';
+import { locate, quickLocate, lastKnownLocation, locationPermission, accuracyLabel, PRECISE_LOCATION_METERS, USABLE_LOCATION_METERS } from '../location';
 import { distanceKm, suggestedRoute } from '../routing';
 import '../map.css';
 import MapIcon, { iconMarkup } from '../components/MapIcon';
@@ -119,11 +119,31 @@ export default function MapPage() {
     });
   }, [resources, filter, search, lang]);
 
+  // Measure "nearest" from the person, not a fixed town centre — without ever prompting on open.
+  // Uses a fresh fix only if location is already allowed, otherwise the last good fix saved on this phone.
+  useEffect(() => {
+    let cancelled = false;
+    const startedAt = locationRequest.current;
+    (async () => {
+      let point = null;
+      if (await locationPermission() === 'granted') point = await quickLocate().catch(() => null);
+      if (!(point?.accuracy <= USABLE_LOCATION_METERS)) {
+        const last = lastKnownLocation();
+        point = last && Date.now() - last.at < 7 * 86400000 ? { ...last, lastKnown: true } : null;
+      }
+      // Never override something the person has done since the page opened.
+      if (cancelled || !point || startedAt !== locationRequest.current || !map.current) return;
+      setLocation({ ...point, auto: true }); setConfirmed(true); setStart('location');
+      if (L.latLng(point.lat, point.lng).distanceTo(L.latLng(7.1904, 8.1345)) < 150000) map.current.setView([point.lat, point.lng], 13, { animate: false });
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   useEffect(() => {
     locationLayer.current.clearLayers();
     if (!location) return;
     L.circleMarker([location.lat, location.lng], { radius: 8, color: '#fff', weight: 3, fillColor: '#005da8', fillOpacity: 1 })
-      .bindTooltip(location.manual ? 'Your chosen start' : 'Browser location estimate').addTo(locationLayer.current);
+      .bindTooltip(location.manual ? 'Your chosen start' : location.lastKnown ? 'Your last known location' : 'You are here (estimate)').addTo(locationLayer.current);
     if (!location.manual) L.circle([location.lat, location.lng], { radius: location.accuracy, color: '#005da8', weight: 1, fillOpacity: 0.08 }).addTo(locationLayer.current);
   }, [location]);
 
@@ -173,7 +193,7 @@ export default function MapPage() {
     try {
       const result = await suggestedRoute(origin, destination, resources.filter(r => r.type === 'hazard' && r.status === 'verified'));
       if (requestId !== routeRequest.current) return;
-      result.startLabel = origin.label || 'Your confirmed pin'; result.endLabel = destination.label || destination.name;
+      result.startLabel = origin.label || (location?.manual ? 'Your chosen pin' : 'Your location'); result.endLabel = destination.label || destination.name;
       result.cachedData = getDataStatus().cached;
       setRoute(result);
       setPlanning(false);
@@ -194,6 +214,12 @@ export default function MapPage() {
     if (selected && selected.type !== 'hazard') setEnd(selected.id);
     locationRequest.current++; setLocating(false); clearRoute(); setPicking(!picking);
     setPlanning(false); setList(false); setSelected(null); setMenu(false); setLocationMessage('');
+  };
+  // One tap on a need shows the nearest matching places straight away.
+  const chooseNeed = id => {
+    if (filter === id) { setFilter(''); setList(false); return; }
+    setFilter(id); setSearch(''); setSelected(null); setPlanning(false); setLocationMessage(''); setMenu(false);
+    setList(id !== 'hazard');
   };
   const toggleList = () => { setList(!list); setPlanning(false); setSelected(null); setLocationMessage(''); setMenu(false); };
   const toggleDirections = () => { setPlanning(!planning); setList(false); setSelected(null); setLocationMessage(''); setMenu(false); };
@@ -220,16 +246,16 @@ export default function MapPage() {
       <div ref={mapNode} className="map-surface" aria-label="Emergency resources map" />
       <section className="map-discovery" aria-label="Find resources">
         <h1 className="sr-only">{t('find.heading')}</h1>
-        <div className="need-filters"><button className={!filter ? 'active' : ''} onClick={() => setFilter('')}>{t('filter.all')}</button>{TYPES.map(([id, , color]) => <button key={id} className={filter === id ? 'active' : ''} aria-pressed={filter === id} onClick={() => setFilter(filter === id ? '' : id)}><span style={{ color: filter === id ? 'inherit' : color }}><MapIcon name={id} /></span>{typeName(id)}</button>)}</div>
+        <div className="need-filters"><button className={!filter ? 'active' : ''} onClick={() => setFilter('')}>{t('filter.all')}</button>{TYPES.map(([id, , color]) => <button key={id} className={filter === id ? 'active' : ''} aria-pressed={filter === id} onClick={() => chooseNeed(id)}><span style={{ color: filter === id ? 'inherit' : color }}><MapIcon name={id} /></span>{typeName(id)}</button>)}</div>
         <button className={'list-toggle ' + (list ? 'active' : '')} onClick={toggleList} aria-label={t(list ? 'view.map' : 'view.list')} aria-pressed={list}><MapIcon name={list ? 'map' : 'list'} /><span>{t(list ? 'view.map' : 'view.list')}</span></button>
       </section>
       {!list && !selected && !planning && !locationMessage && !picking && !route && <div className="map-hint">{t('hint')}</div>}
       <button className="locate-control icon-button" onClick={useLocation} disabled={locating} aria-label="Use my location" title="Use my location"><MapIcon name="location" /></button>
       {(locationMessage || picking) && <div className="location-notice" role="status"><p>{picking ? 'Tap the map to choose your starting point.' : locationMessage}</p>{location && !confirmed && !picking && <button onClick={() => { clearRoute(); setConfirmed(true); setStart('location'); setLocationMessage(`Starting point confirmed by you · Browser accuracy ${accuracyLabel(location.accuracy)}`); }}>Use this estimate</button>}<button onClick={placePin}><MapIcon name="pin" />{picking ? 'Cancel pin' : 'Place a pin'}</button><button aria-label="Dismiss location message" onClick={() => { setLocationMessage(''); setPicking(false); }}>Dismiss</button></div>}
       {list && <section className="map-panel resource-list"><div className="panel-heading"><h2>{t('list.heading')}</h2><button onClick={() => setList(false)}>{t('close')}</button></div><label>{t('list.search')}<input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder={t('list.placeholder')} /></label><p className="muted">{t('list.distances', { origin: origin?.label || t('list.yourPin') })}</p>{visible.length === 0 && <p>{t(offline ? 'list.noneOffline' : 'list.none')}</p>}{visible.map(r => <button className="resource-row" key={r.id} onClick={() => select(r)}><strong>{r.name}</strong><span>{typeName(r.type)} · {origin ? `${distanceKm(origin, r).toFixed(1)} km` : t('list.noDistance')}</span><small>{isStale(r.verified_at) && <em className="stale-badge">{t('fresh.stale')}</em>}{t('list.verified', { date: dateLabel(r.verified_at) })}</small></button>)}</section>}
-      {planning && <section className="map-panel route-panel"><div className="panel-heading"><h2>Plan your journey</h2><button onClick={() => setPlanning(false)}>Close</button></div><p className="muted">Choose where you are and where you need to go.</p><div className="route-location-actions"><button aria-label="Find route starting location" onClick={useLocation} disabled={locating}>Use my location</button><button onClick={placePin}>Place a pin</button></div><label>Starting point<select value={start} onChange={e => { setStart(e.target.value); clearRoute(); }}>{confirmed && location && <option value="location">Your confirmed pin</option>}{Object.entries(LANDMARKS).map(([id, p]) => <option key={id} value={id}>{p.label}</option>)}</select></label><label>Destination<select value={end} onChange={e => { setEnd(e.target.value); clearRoute(); }}><optgroup label="Landmarks">{Object.entries(LANDMARKS).map(([id, p]) => <option key={id} value={id}>{p.label}</option>)}</optgroup><optgroup label="Resources">{resources.filter(r => r.type !== 'hazard').map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</optgroup></select></label><button className="primary" disabled={routing || offline} onClick={calculate}>{routing ? 'Finding a road route…' : 'Find suggested route'}</button>{offline && <p className="warning">New routes require internet. Previously displayed routes remain visible.</p>}{routeError && <p className="warning" role="alert">{routeError}</p>}</section>}
+      {planning && <section className="map-panel route-panel"><div className="panel-heading"><h2>Plan your journey</h2><button onClick={() => setPlanning(false)}>Close</button></div><p className="muted">Choose where you are and where you need to go.</p><div className="route-location-actions"><button aria-label="Find route starting location" onClick={useLocation} disabled={locating}>Use my location</button><button onClick={placePin}>Place a pin</button></div><label>Starting point<select value={start} onChange={e => { setStart(e.target.value); clearRoute(); }}>{confirmed && location && <option value="location">{location.manual ? 'Your chosen pin' : 'Your location'}</option>}{Object.entries(LANDMARKS).map(([id, p]) => <option key={id} value={id}>{p.label}</option>)}</select></label><label>Destination<select value={end} onChange={e => { setEnd(e.target.value); clearRoute(); }}><optgroup label="Landmarks">{Object.entries(LANDMARKS).map(([id, p]) => <option key={id} value={id}>{p.label}</option>)}</optgroup><optgroup label="Resources">{resources.filter(r => r.type !== 'hazard').map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</optgroup></select></label><button className="primary" disabled={routing || offline} onClick={calculate}>{routing ? 'Finding a road route…' : 'Find suggested route'}</button>{offline && <p className="warning">New routes require internet. Previously displayed routes remain visible.</p>}{routeError && <p className="warning" role="alert">{routeError}</p>}</section>}
       {route && <aside className={`route-result ${route.remaining ? 'danger' : ''}`} role="status"><strong>{route.remaining ? 'Hazards remain on route' : 'Suggested road route'} · {route.distance.toFixed(1)} km</strong><p>{route.startLabel} → {route.endLabel}</p><p>{route.message}</p>{route.avoided > 0 && <p>{route.avoided} reported hazard(s) avoided.</p>}{(offline || route.cachedData) && <p>Uses saved information; hazards may have changed.</p>}<small>Calculated {dateLabel(route.createdAt)}</small><button onClick={clearRoute}>Clear route</button></aside>}
-      {selected && <section className="map-panel resource-details"><div className="panel-heading">{isStale(selected.verified_at) ? <span className="verified stale">{t('fresh.stale')}</span> : <span className="verified">{t('details.verified')}</span>}<button onClick={() => setSelected(null)}>{t('close')}</button></div><h2>{selected.name}</h2><p className="resource-distance">{origin && t('details.distance', { km: distanceKm(origin, selected).toFixed(1), origin: origin.label || t('list.yourPin') })}</p><p className="muted">{t('details.lastVerified', { date: dateLabel(selected.verified_at) })}</p>{isStale(selected.verified_at) && <p className="stale-note" role="note">{t('fresh.staleNote')}</p>}<p>{selected.description || t('details.noDetails')}</p>{selected.capacity != null && <p>{t('details.capacity')} <strong>{selected.capacity}</strong> · {t('details.spacesUnknown')}</p>}<details><summary>{t('details.coordinates')}</summary><p>{Number(selected.lat).toFixed(4)}, {Number(selected.lng).toFixed(4)}</p></details><div className="card-actions">{selected.type !== 'hazard' && <button className="primary" onClick={() => { clearRoute(); setEnd(selected.id); setSelected(null); setPlanning(true); }}>{t('details.directions')}</button>}{selected.contact_phone && <a className="call-button" href={`tel:${selected.contact_phone.replace(/[^+\d]/g, '')}`}>{t('details.call')}</a>}</div></section>}
+      {selected && <section className="map-panel resource-details"><div className="panel-heading">{isStale(selected.verified_at) ? <span className="verified stale">{t('fresh.stale')}</span> : <span className="verified">{t('details.verified')}</span>}<button onClick={() => setSelected(null)}>{t('close')}</button></div><h2>{selected.name}</h2><p className="resource-distance">{origin && t('details.distance', { km: distanceKm(origin, selected).toFixed(1), origin: origin.label || t('list.yourPin') })}</p><p className="muted">{t('details.lastVerified', { date: dateLabel(selected.verified_at) })}</p>{isStale(selected.verified_at) && <p className="stale-note" role="note">{t('fresh.staleNote')}</p>}<p>{selected.description || t('details.noDetails')}</p>{selected.capacity != null && <p>{t('details.capacity')} <strong>{selected.capacity}</strong> · {t('details.spacesUnknown')}</p>}<details><summary>{t('details.coordinates')}</summary><p>{Number(selected.lat).toFixed(4)}, {Number(selected.lng).toFixed(4)}</p></details><div className="card-actions">{selected.contact_phone && <a className="call-button primary-call" href={`tel:${selected.contact_phone.replace(/[^+\d]/g, '')}`}><MapIcon name="phone" />{t('details.call')}</a>}{selected.type !== 'hazard' && <button className={selected.contact_phone ? '' : 'primary'} onClick={() => { clearRoute(); setEnd(selected.id); setSelected(null); setPlanning(true); }}>{t('details.directions')}</button>}</div></section>}
       {notice && <div className="map-toast" role="status">{notice}<button onClick={() => setNotice('')} aria-label={t('notice.dismiss')}>×</button></div>}
       <button className="report-action" aria-label="+ Report a resource or hazard" onClick={() => navigate('/report')}><MapIcon name="report" />{t('nav.report')}</button>
       <div className="demo-label">{t('demo.label')}</div>

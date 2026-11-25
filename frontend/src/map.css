@@ -36,3 +36,8 @@
 .verified.stale { color:#8a5a00; background:#fff1d6; }
 .stale-note { color:#8a5a00; background:#fff8e8; border:1px solid #f0dcaa; border-radius:6px; padding:8px 10px; font-size:13px; }
 @media(max-width:760px) { .header-actions .language-select { display:none; } }
+/* Calling is usually the fastest way to confirm help is really there. */
+.call-button.primary-call { background:#e8600c; color:#fff; border-color:#e8600c; font-weight:800; gap:8px; }
+.call-button.primary-call .map-icon { width:18px; height:18px; display:inline-flex; }
+.card-actions>* { min-height:52px; font-size:16px; }
+.need-filters button { min-height:44px; }

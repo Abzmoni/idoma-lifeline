@@ -10,7 +10,7 @@ The backend uses SQLite by default, or PostgreSQL/PostGIS when DATABASE_URL is s
 
 - Open the production app online and wait for its service worker to activate. Reload once, inspect the resources, and visit the map areas you will demonstrate. Only viewed tiles are saved; this is not an offline regional map download.
 - Keep the coordinator dashboard open in a second tab. Its reset action erases reports/resources/SMS logs and restores sample data: use it only in the isolated demo database, before rehearsal.
-- Open **More options (⋯) → Otukpo demo** to reset the presentation location without changing data. The app no longer prompts for location or recentres automatically. Sync and manual pin placement are also available in this menu.
+- Open **More options (⋯) → Otukpo demo** to reset the presentation location without changing data. The map never prompts for location on open; if location is already allowed (or a recent fix is saved on the device) it measures "nearest" from the person. Sync and manual pin placement are also in this menu.
 - Test the exact road route on the presentation connection. The external routing provider may fail or find no clear alternative. Explain the warning honestly; use resource discovery and offline reporting as the core story.
 - Language: the header switch (or **More options (⋯)** on a phone) toggles English and Pidgin. On the USSD simulator, option 3 switches the menu language.
 - Freshness: records not re-checked for 72 hours show **May be outdated**. Use the coordinator **Re-seed Data** button before rehearsal so sample records are fresh, or leave one stale on purpose to show the warning.
@@ -23,7 +23,7 @@ The backend uses SQLite by default, or PostgreSQL/PostGIS when DATABASE_URL is s
 
 **0:20–0:55:** Choose Shelter, open List view, select a facility, show verification time and total capacity. Open Directions, explicitly select a starting landmark, and show the suggested road route. Route warnings stay visible; no route is guaranteed safe.
 
-**0:55–1:35:** Disconnect the browser from the network. Reload the production app to show saved resources. Report a water point, select a location, and save. Show “Saved on this device” and the waiting-to-sync count on the map.
+**0:55–1:35:** Disconnect the browser from the network. Reload the production app to show saved resources. Tap **Report → Water**: the pin is placed automatically (phone GPS works without data; otherwise the last known location, or tap a town). Tap **Yes, it's here**, then **Save report**. Show “Saved on this device” and the waiting-to-sync count on the map.
 
 **1:35–2:15:** Reconnect. Show “Report synced · Awaiting coordinator review.” In the coordinator tab, refresh and approve the report. Return to the public map: focusing the tab refreshes it, and it also refreshes every 30 seconds while connected. Show the new verified resource. Private reporter contact is not the public facility contact.
 
@@ -33,7 +33,7 @@ The backend uses SQLite by default, or PostgreSQL/PostGIS when DATABASE_URL is s
 
 ## Location on a laptop versus phone
 
-The browser supplies an estimate, not a guaranteed GPS fix. A laptop may have a much larger uncertainty than a phone. The app requests fresh, high-accuracy positioning, displays the full reported accuracy radius, and requires confirmation before using it as the route start. **Place a pin** or select a landmark if the estimate is wrong. Report submission also requires confirming the resource pin. The app cannot manufacture a precise location when the device/provider cannot supply one.
+The browser supplies an estimate, not a guaranteed GPS fix. A laptop may have a much larger uncertainty than a phone. The app requests fresh, high-accuracy positioning, displays the full reported accuracy radius, and requires confirmation before using it as the route start. **Place a pin** or select a landmark if the estimate is wrong. When reporting, the pin is placed automatically from fresh GPS, then the last known location saved on the device (shown with its age), and otherwise the person taps the map or picks a town. Laptops' rough network estimates (over 2 km) are never used automatically. Coordinators see how each report's location was found. The app cannot manufacture a precise location when the device/provider cannot supply one.
 
 ## Claims to keep precise
 

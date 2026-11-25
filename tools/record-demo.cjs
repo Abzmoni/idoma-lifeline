@@ -60,7 +60,8 @@ const tilesReady = page => page.waitForFunction(() => [...document.querySelector
   try {
     for (let i = 0; i < 60; i++) { try { await fetch(base + '/api/resources'); break; } catch { await delay(250); } }
     browser = await chromium.launch({ executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true });
-    const context = await browser.newContext({ viewport: { width: 1280, height: 720 }, recordVideo: { dir: outDir, size: { width: 1280, height: 720 } } });
+    const context = await browser.newContext({ viewport: { width: 1280, height: 720 }, recordVideo: { dir: outDir, size: { width: 1280, height: 720 } },
+      geolocation: { latitude: 7.1935, longitude: 8.1372, accuracy: 12 }, permissions: ['geolocation'] });
     const page = await context.newPage();
 
     // Warm-up: install the service worker so the offline scene is real.
@@ -76,9 +77,7 @@ const tilesReady = page => page.waitForFunction(() => [...document.querySelector
 
     // 1. Find shelter
     await press(page.locator('.need-filters').getByRole('button', { name: 'Shelter' }));
-    await caption(page, 'Choose a need: only verified shelters are shown.');
-    await press(page.getByRole('button', { name: 'List view', exact: true }));
-    await caption(page, 'List view: nearest first, with the time each record was last verified.');
+    await caption(page, 'One tap on a need: the nearest verified shelters appear, closest first, with when each was last checked.', 4200);
     await press(page.locator('.resource-row').first());
     await page.locator('.resource-details').waitFor();
     await tilesReady(page);
@@ -97,7 +96,7 @@ const tilesReady = page => page.waitForFunction(() => [...document.querySelector
     else if (await page.getByRole('heading', { name: 'Plan your journey' }).count()) await press(page.locator('.route-panel').getByRole('button', { name: 'Close' }));
 
     // 3. Language
-    await page.locator('.need-filters').getByRole('button', { name: 'Shelter' }).click();
+    await page.locator('.need-filters').getByRole('button', { name: 'All', exact: true }).click();
     await caption(page, 'One tap switches the interface to Pidgin. Idoma is next, written by native speakers.', 2600);
     await page.locator('.language-select').evaluate(el => { el.style.outline = '4px solid #E8600C'; });
     await delay(600);
@@ -117,16 +116,19 @@ const tilesReady = page => page.waitForFunction(() => [...document.querySelector
 
     // 5. Report while offline
     await press(page.locator('.report-action'));
-    await page.getByPlaceholder("e.g. St. Mary's Secondary School Hall").waitFor();
-    await caption(page, 'Anyone can report a resource or hazard, with no sign-up, even offline.', 2800);
-    await press(page.locator('label.type-chip').filter({ has: page.locator('input[value="water"]') }));
-    await page.getByPlaceholder("e.g. St. Mary's Secondary School Hall").pressSequentially('Water point near Otukpo market', { delay: 55 });
-    await press(page.getByRole('button', { name: 'Confirm this pin', exact: true }));
-    await caption(page, 'The reporter confirms the pin, so locations are deliberate.', 2600);
-    await press(page.getByRole('button', { name: 'Save Offline', exact: true }));
+    await page.getByRole('heading', { name: 'What do you want to report?' }).waitFor();
+    await caption(page, 'Reporting is three big steps, with no sign-up. Even offline. First: what is it?', 3200);
+    await press(page.getByRole('button', { name: 'Water', exact: true }));
+    await page.getByText(/The pin is on your location|last known location/).waitFor();
+    await tilesReady(page);
+    await caption(page, 'Where? The pin is placed automatically: phone GPS works without data, or the last known location is used.', 4800);
+    await press(page.getByRole('button', { name: "Yes, it's here" }));
+    await caption(page, 'Anything to add? All optional: a name, a note, a private phone number.', 3000);
+    await page.getByPlaceholder("e.g. St. Mary's Church hall").pressSequentially('Water point near Otukpo market', { delay: 55 });
+    await press(page.getByRole('button', { name: 'Save report', exact: true }));
     await page.getByRole('heading', { name: 'Saved on this device.' }).waitFor();
-    await caption(page, 'Saved on this device, queued for automatic sync.', 3200);
-    await press(page.getByRole('button', { name: 'Return to Map Directory' }));
+    await caption(page, 'Saved on this phone. It sends by itself when the network returns.', 3400);
+    await press(page.getByRole('button', { name: 'Back to map' }));
     await page.getByText('1 report waiting to sync').waitFor();
     await caption(page, 'The map shows 1 report waiting to sync.', 3000);
 
@@ -168,7 +170,7 @@ const tilesReady = page => page.waitForFunction(() => [...document.querySelector
     // 9. Back to the public map
     await page.goto(base, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => document.querySelectorAll('.resource-pin').length >= 11);
-    await press(page.getByRole('button', { name: 'List view', exact: true }));
+    await press(page.locator('.need-filters').getByRole('button', { name: 'Water' }));
     await page.getByPlaceholder('Name or landmark').pressSequentially('Water point', { delay: 60 });
     await caption(page, 'The newly verified water point is live on the public map for everyone.', 4200);
 
