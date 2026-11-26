@@ -6,7 +6,7 @@
 .report-top div span { font-size:13px; color:#5b6470; }
 .report-back { width:48px; height:48px; display:flex; align-items:center; justify-content:center; border:1px solid #d7d6ce; border-radius:10px; background:#fff; }
 .report-back .map-icon, .report-primary .map-icon, .report-secondary .map-icon, .report-status .map-icon, .report-flow small .map-icon { width:22px; height:22px; display:inline-flex; flex-shrink:0; }
-.report-offline { font-size:12px; font-weight:700; color:#8a5a00; background:#fff1d6; padding:5px 10px; border-radius:20px; }
+
 .report-progress { display:flex; gap:6px; padding:10px 16px 0; }
 .report-progress i { flex:1; height:5px; border-radius:3px; background:#e3e2da; }
 .report-progress i.on { background:#e8600c; }

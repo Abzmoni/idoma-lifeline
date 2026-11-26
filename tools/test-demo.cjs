@@ -134,7 +134,7 @@ async function api(endpoint, data, token) {
   await page.locator('.route-panel select').nth(1).selectOption('market');
   await page.getByRole('button', { name: 'Show the way' }).click();
   await page.locator('.route-result').getByText(/^Go (north|south|east|west|north-east|north-west|south-east|south-west) · /).waitFor();
-  await page.locator('.route-result .route-compass').waitFor();
+  await page.locator('.route-result .route-arrow').waitFor();
   await page.screenshot({ path: path.join(__dirname, 'artifacts/route-offline-compass.png') });
   console.log('PASS offline directions: saved road route, then compass direction when nothing is saved');
   await page.reload();

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import L from 'leaflet';
 import { api } from '../api';
 import MapIcon, { iconMarkup } from '../components/MapIcon';
+import Signal from '../components/Signal';
 import { useI18n } from '../i18n';
 import { quickLocate, lastKnownLocation, accuracyLabel, ageParts, validPoint, USABLE_LOCATION_METERS } from '../location';
 import '../report.css';
@@ -125,7 +126,7 @@ export default function ReportPage() {
     <header className="report-top">
       <button type="button" className="report-back" onClick={back} aria-label={t('report.back')}><MapIcon name="back" /></button>
       <div><strong>{t('report.title')}</strong><span>{t('report.step', { n: step })}</span></div>
-      {offline && <span className="report-offline">{t('status.offline')}</span>}
+      {offline && <Signal state="offline" label={t('status.offline')} />}
     </header>
     <div className="report-progress" aria-hidden="true">{[1, 2, 3].map(n => <i key={n} className={n <= step ? 'on' : ''} />)}</div>
 
