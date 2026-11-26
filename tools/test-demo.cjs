@@ -64,7 +64,7 @@ async function api(endpoint, data, token) {
   console.log('PASS USSD/SMS: Pidgin menus, LGA towns, unknown places; impact stats');
 
   browser = await chromium.launch({ executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', headless: true });
-  const context = await browser.newContext({ viewport: { width: 1440, height: 960 }, geolocation: { latitude: 6.45, longitude: 3.39, accuracy: 25000 }, permissions: ['geolocation'] });
+  const context = await browser.newContext({ viewport: { width: 1440, height: 960 }, geolocation: { latitude: 7.25, longitude: 8.05, accuracy: 25000 }, permissions: ['geolocation'] });
   const page = await context.newPage(); const errors = []; page.on('pageerror', e => { errors.push(e.message); console.log('BROWSER ERROR', e.message); });
   page.on('console', m => { if (m.type() === 'warning' || m.type() === 'error') console.log('BROWSER', m.text()); });
   page.on('response', r => { if (r.url().includes('/api/resources')) console.log('Resources response:', r.status(), r.url()); });
@@ -211,6 +211,35 @@ async function api(endpoint, data, token) {
   await noGps.close();
   assert.deepEqual(errors, []);
   console.log('PASS report location: last known fallback, town choice, no manual confirmation');
+
+  // Laptop on a phone hotspot: the browser reports a confident but wrong fix in Abuja (the mobile network's gateway).
+  const hotspot = await browser.newContext({ viewport: { width: 1280, height: 800 }, permissions: ['geolocation'],
+    geolocation: { latitude: 9.0765, longitude: 7.3986, accuracy: 30 } });
+  const far = await hotspot.newPage(); far.on('pageerror', e => errors.push(e.message));
+  await far.goto(base + '/#/report', { waitUntil: 'domcontentloaded' });
+  await far.getByRole('button', { name: 'Water', exact: true }).click();
+  await far.getByText(/far from Idoma land, so we did not use it/).waitFor();
+  await far.getByText(/couldn't find your location/).waitFor();
+  assert.equal(await far.getByRole('button', { name: "Yes, it's here" }).isDisabled(), true);
+  assert.equal(await far.evaluate(() => localStorage.getItem('lifeline-last-location')), null);
+  await far.goto(base + '/', { waitUntil: 'domcontentloaded' });
+  await far.waitForFunction(() => document.querySelectorAll('.resource-pin').length >= 10);
+  await far.getByRole('button', { name: 'Use my location', exact: true }).click();
+  await far.getByText(/km from Otukpo, far outside Idoma land/).waitFor();
+  const centre = await far.evaluate(() => document.querySelector('.leaflet-container') && 1);
+  assert.equal(centre, 1);
+  await far.getByRole('button', { name: 'Dismiss location message' }).click();
+  await far.locator('.need-filters').getByRole('button', { name: 'Medical' }).click();
+  await far.locator('.resource-row').first().click();
+  await far.locator('.resource-details').getByRole('button', { name: 'Directions', exact: true }).click();
+  await far.locator('.route-result').getByText(/far from Idoma land/).waitFor();
+  await far.locator('.route-result').getByText(/This route starts at Otukpo town centre/).waitFor();
+  assert.equal(await far.locator('.route-result .warning').count(), 1);
+  await far.screenshot({ path: path.join(__dirname, 'artifacts/hotspot-route.png') });
+  assert.equal(await far.evaluate(() => localStorage.getItem('lifeline-last-location')), null);
+  await hotspot.close();
+  assert.deepEqual(errors, []);
+  console.log('PASS hotspot laptop: far-away fix rejected, explained, never saved as last known location');
 })().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => {
   if (browser) await browser.close();
   if (server) server.kill();

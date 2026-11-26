@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import L from 'leaflet';
 import { api, syncOfflineReports, getDataStatus } from '../api';
 import db from '../db';
-import { locate, quickLocate, lastKnownLocation, locationPermission, accuracyLabel, ageParts, PRECISE_LOCATION_METERS, USABLE_LOCATION_METERS } from '../location';
+import { locate, quickLocate, lastKnownLocation, locationPermission, accuracyLabel, ageParts, usableFix, inServiceArea, kmFromOtukpo, PRECISE_LOCATION_METERS } from '../location';
 import { distanceKm, suggestedRoute, bestRoute, saveRoute, hasSavedRoute, compassPoint, WALK_KMH } from '../routing';
 import '../map.css';
 import MapIcon, { iconMarkup } from '../components/MapIcon';
@@ -131,7 +131,7 @@ export default function MapPage() {
     (async () => {
       let point = null;
       if (await locationPermission() === 'granted') point = await quickLocate().catch(() => null);
-      if (!(point?.accuracy <= USABLE_LOCATION_METERS)) {
+      if (!usableFix(point)) {
         const last = lastKnownLocation();
         point = last && Date.now() - last.at < 7 * 86400000 ? { ...last, lastKnown: true } : null;
       }
@@ -190,6 +190,7 @@ export default function MapPage() {
     try {
       const point = await locate();
       if (requestId !== locationRequest.current) return;
+      if (!inServiceArea(point)) { setLocationMessage(`Your device says you are about ${Math.round(kmFromOtukpo(point))} km from Otukpo, far outside Idoma land, so this location was not used. On a laptop using a phone hotspot, location is guessed from the mobile network and is usually wrong. Tap "Place a pin" to show where you are, or open this app on the phone itself.`); return; }
       setLocation(point);
       const approximate = point.accuracy > PRECISE_LOCATION_METERS;
       setLocationMessage(`Browser accuracy: about ${accuracyLabel(point.accuracy)}. ${approximate ? 'This is approximate; laptops may rely on network location. Check the pin or place it yourself.' : 'Check the pin, then confirm it as your starting point.'}`);
@@ -221,7 +222,7 @@ export default function MapPage() {
       const hazards = resources.filter(r => r.type === 'hazard' && r.status === 'verified');
       const result = await bestRoute(from, destination, key, hazards, { online: !offline && navigator.onLine });
       if (requestId !== routeRequest.current) return;
-      Object.assign(result, { startLabel: from.label, endLabel: destination.label || destination.name, phone: destination.contact_phone, guessed: from.guessed });
+      Object.assign(result, { startLabel: from.label, endLabel: destination.label || destination.name, phone: destination.contact_phone, guessed: from.guessed, far: from.far });
       setRoute(result); setPlanning(false); setSelected(null); setList(false);
       drawRoute(result, from);
     } catch (error) { if (requestId === routeRequest.current) setRouteError(error.message); }
@@ -230,14 +231,15 @@ export default function MapPage() {
   const youLabel = point => point.manual ? 'Your chosen pin' : point.lastKnown ? t('route.youLast') : t('route.you');
   // Directions straight from a place card: start from wherever the person is, with no form to fill.
   const routeTo = async destination => {
-    let from = start === 'location' && confirmed && location ? location : null;
+    let from = start === 'location' && confirmed && location ? location : null, fresh = null;
     if (!from) {
       setRouting(true);
-      const fresh = await quickLocate().catch(() => null);
-      if (fresh && fresh.accuracy <= USABLE_LOCATION_METERS) { from = fresh; locationRequest.current++; setLocation(fresh); setConfirmed(true); setStart('location'); }
+      fresh = await quickLocate().catch(() => null);
+      if (usableFix(fresh)) { from = fresh; locationRequest.current++; setLocation(fresh); setConfirmed(true); setStart('location'); }
       else { const last = lastKnownLocation(); if (last) from = { ...last, lastKnown: true }; }
     }
-    from = from ? { ...from, label: youLabel(from) } : { ...LANDMARKS.otukpo, guessed: true };
+    const far = !from && Boolean(fresh) && !inServiceArea(fresh);
+    from = from ? { ...from, label: youLabel(from) } : { ...LANDMARKS.otukpo, guessed: true, far };
     await showRoute(from, destination, destinationKey(destination.id));
   };
   const calculate = () => {
@@ -307,7 +309,7 @@ export default function MapPage() {
           <strong>{t('route.' + route.kind, { km: route.distance.toFixed(1), dir: t('dir.' + compassPoint(route.bearing || 0)) })}</strong></div>
         <p className="route-walk">{t('route.walk', { time: walkTime(route.distance) })}</p>
         <p>{t('route.from', { from: route.startLabel, to: route.endLabel })}</p>
-        {route.guessed && <p className="warning">{t('route.fromGuess')}</p>}
+        {route.far && <p className="warning">{t('route.far')}</p>}{route.guessed && !route.far && <p className="warning">{t('route.fromGuess')}</p>}
         {route.kind === 'straight' && <p className="route-note">{t('route.straightNote', { dir: t('dir.' + compassPoint(route.bearing)) })}</p>}
         {route.kind === 'saved' && <p className="route-note">{t('route.savedNote', { age: ago(route.createdAt) })}</p>}
         {route.kind === 'saved' && route.gapKm > 0.05 && <p>{t('route.savedGap', { m: metresLabel(route.gapKm) })}</p>}

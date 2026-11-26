@@ -3,6 +3,23 @@ export const PRECISE_LOCATION_METERS = 200;
 export const USABLE_LOCATION_METERS = 2000;
 const LAST_KEY = 'lifeline-last-location';
 
+// Idoma land with a margin (roughly Benue South). A fix outside this box is almost certainly wrong:
+// typically a laptop on a phone hotspot, whose position is guessed from the mobile network's
+// internet gateway (often Abuja or Lagos), sometimes with a confident-looking accuracy figure.
+export const SERVICE_AREA = { south: 6.55, north: 8.2, west: 7.45, east: 8.75 };
+const OTUKPO = { lat: 7.1904, lng: 8.1345 };
+export function inServiceArea(p) {
+  return validPoint(p) && p.lat >= SERVICE_AREA.south && p.lat <= SERVICE_AREA.north && p.lng >= SERVICE_AREA.west && p.lng <= SERVICE_AREA.east;
+}
+// Safe to use without asking: precise enough and actually in the area this service covers.
+export function usableFix(p) {
+  return Boolean(p) && p.accuracy <= USABLE_LOCATION_METERS && inServiceArea(p);
+}
+export function kmFromOtukpo(p) {
+  const rad = Math.PI / 180, a = Math.sin((p.lat - OTUKPO.lat) * rad / 2) ** 2 + Math.cos(p.lat * rad) * Math.cos(OTUKPO.lat * rad) * Math.sin((p.lng - OTUKPO.lng) * rad / 2) ** 2;
+  return 12742 * Math.asin(Math.sqrt(a));
+}
+
 export function accuracyLabel(meters) {
   return meters >= 1000 ? `${(meters / 1000).toFixed(1)} km` : `${Math.ceil(meters)} m`;
 }
@@ -14,7 +31,7 @@ export function validPoint(point) {
 
 // Remember the last good fix on this device so the app can still place a pin when GPS or the network is unavailable.
 export function rememberLocation(point) {
-  if (!validPoint(point) || !(point.accuracy <= USABLE_LOCATION_METERS)) return;
+  if (!usableFix(point)) return; // never let a wrong far-away fix become the fallback
   try { localStorage.setItem(LAST_KEY, JSON.stringify({ lat: point.lat, lng: point.lng, accuracy: point.accuracy, at: Date.now() })); }
   catch { /* storage unavailable: nothing remembered */ }
 }
@@ -22,7 +39,7 @@ export function rememberLocation(point) {
 export function lastKnownLocation() {
   try {
     const saved = JSON.parse(localStorage.getItem(LAST_KEY));
-    return validPoint(saved) && Number.isFinite(saved.at) ? saved : null;
+    return inServiceArea(saved) && Number.isFinite(saved.at) ? saved : null;
   } catch { return null; }
 }
 

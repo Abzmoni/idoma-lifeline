@@ -37,3 +37,5 @@
 .report-more summary { font-size:15px; font-weight:700; color:#c24f08; padding:8px 0; cursor:pointer; }
 .report-more label { margin-top:8px; }
 @media (min-width:600px) { .report-flow { margin:24px auto; min-height:auto; border:1px solid #e3e2da; border-radius:16px; } .report-types { grid-template-columns:1fr 1fr 1fr; } }
+
+.report-far { color:#8a5a00; background:#fff8e8; border:1px solid #f0dcaa; border-radius:6px; padding:8px 10px; }

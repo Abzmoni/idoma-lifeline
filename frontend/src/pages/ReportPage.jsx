@@ -5,7 +5,7 @@ import { api } from '../api';
 import MapIcon, { iconMarkup } from '../components/MapIcon';
 import Signal from '../components/Signal';
 import { useI18n } from '../i18n';
-import { quickLocate, lastKnownLocation, accuracyLabel, ageParts, validPoint, USABLE_LOCATION_METERS } from '../location';
+import { quickLocate, lastKnownLocation, accuracyLabel, ageParts, validPoint, usableFix, inServiceArea } from '../location';
 import '../report.css';
 
 // Three short steps for people under stress: what → where → (optional) details.
@@ -28,6 +28,7 @@ export default function ReportPage() {
   const [type, setType] = useState('');
   const [place, setPlace] = useState(null); // { lat, lng, source: 'gps'|'last'|'map'|'town', accuracy?, at?, town? }
   const [finding, setFinding] = useState(true);
+  const [farFix, setFarFix] = useState(false); // device gave an impossible far-away location (e.g. laptop on a hotspot)
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [reporterContact, setReporterContact] = useState('');
@@ -47,8 +48,8 @@ export default function ReportPage() {
     setFinding(true);
     try {
       const point = await quickLocate();
-      if (!userMoved.current && point.accuracy <= USABLE_LOCATION_METERS) setPlace({ ...point, source: 'gps' });
-      else if (!userMoved.current) throw new Error('imprecise');
+      if (!userMoved.current && usableFix(point)) { setFarFix(false); setPlace({ ...point, source: 'gps' }); }
+      else if (!userMoved.current) { setFarFix(!inServiceArea(point)); throw new Error('unusable'); }
     } catch {
       const last = lastKnownLocation();
       if (!userMoved.current && last) setPlace({ ...last, source: 'last' });
@@ -143,6 +144,7 @@ export default function ReportPage() {
     {step === 2 && <section className="report-step">
       <h1>{t('report.q2')}</h1>
       <p className={'report-status ' + (place ? 'ok' : finding ? '' : 'warn')} role="status"><MapIcon name={place ? 'pin' : 'location'} />{status}</p>
+      {farFix && (!place || place.source === 'last') && <p className="report-hint report-far" role="note">{t('loc.far')}</p>}
       <div ref={mapNode} className="report-map" aria-label={t('loc.adjust')} />
       <p className="report-hint">{t('loc.adjust')}</p>
       <div className="report-row">
