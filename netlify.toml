@@ -1,0 +1,14 @@
+# Netlify builds only the frontend; the API runs on Render (address in frontend/.env.production).
+[build]
+  base = "frontend"
+  command = "npm ci && npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+# The service worker must never be served stale, or phones keep the old app.
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache"
