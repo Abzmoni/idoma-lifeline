@@ -4,9 +4,28 @@ const API_BASE = import.meta.env.VITE_API_URL || '';
 let dataStatus = { cached: true, updatedAt: null };
 export const getDataStatus = () => dataStatus;
 
-// Helper to determine if we are online
+// "Online" in the browser only means a network adapter is up. On a phone with data but no credit, a
+// captive Wi-Fi, or a laptop with a spare adapter, requests just hang. So we also remember whether the
+// server actually answered recently, and never make a person wait on a connection known to be dead.
+let serverReachable = null; // null = not tried yet
+const setReachable = value => {
+  if (serverReachable === value) return;
+  serverReachable = value;
+  window.dispatchEvent(new CustomEvent('lifeline-connection', { detail: { reachable: value } }));
+};
 export function isOnline() {
   return navigator.onLine;
+}
+// True when it is worth making someone wait for the network.
+export function connectionUsable() {
+  return navigator.onLine && serverReachable !== false;
+}
+export const isServerReachable = () => serverReachable;
+// Resources saved on this device, for showing something instantly before the network answers.
+export async function getCachedResources() {
+  const resources = await db.resources.toArray();
+  const updatedAt = (await db.metadata.get('resources'))?.updatedAt || null;
+  return { resources, updatedAt };
 }
 
 // Fetch helper with auth header
@@ -22,7 +41,16 @@ async function request(path, options = {}) {
   }
 
   const url = `${API_BASE}${path}`;
-  const response = await fetch(url, { signal: AbortSignal.timeout(12000), ...options, headers });
+  let response;
+  // No answer within a few seconds: treat the connection as unusable for now (it flips back when an answer arrives).
+  const slow = setTimeout(() => setReachable(false), 4000);
+  try {
+    response = await fetch(url, { signal: AbortSignal.timeout(12000), ...options, headers });
+  } catch (error) {
+    setReachable(false); // no answer at all: network down or hanging
+    throw error;
+  } finally { clearTimeout(slow); }
+  setReachable(true);
   
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
@@ -103,7 +131,8 @@ export const api = {
     const report = { ...data, client_request_id: crypto.randomUUID(), created_at: new Date().toISOString() };
     const id = await db.reports_queue.add(report);
     window.dispatchEvent(new Event('idoma-lifeline_queue'));
-    if (isOnline()) await syncOfflineReports();
+    // Never keep someone waiting more than ~3 s; the queue keeps trying in the background.
+    if (connectionUsable()) await Promise.race([syncOfflineReports(), new Promise(r => setTimeout(r, 3000))]);
     const remaining = await db.reports_queue.get(id);
     if (remaining?.sync_error) {
       // The open form retains the user's input so it can be corrected and submitted again.

@@ -96,10 +96,12 @@ export function hasSavedRoute(start, destinationKey) {
 }
 
 // Best route available right now: live road route → saved road route → compass direction.
-export async function bestRoute(start, end, destinationKey, hazards, { online = true, fetchRoad } = {}) {
+export async function bestRoute(start, end, destinationKey, hazards, { online = true, fetchRoad, wait = 8000 } = {}) {
   if (online) {
     try {
-      const live = await suggestedRoute(start, end, hazards, fetchRoad);
+      // Cap the wait: on a weak or hanging connection, fall back instead of keeping someone waiting.
+      const live = await Promise.race([suggestedRoute(start, end, hazards, fetchRoad),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Routing is slow')), wait))]);
       saveRoute(start, destinationKey, live);
       return { ...live, kind: 'road' };
     } catch { /* no signal or provider down: fall through to what works offline */ }

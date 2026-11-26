@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import L from 'leaflet';
-import { api, syncOfflineReports, getDataStatus } from '../api';
+import { api, syncOfflineReports, getDataStatus, getCachedResources, connectionUsable, isServerReachable } from '../api';
 import db from '../db';
 import { locate, quickLocate, lastKnownLocation, locationPermission, accuracyLabel, ageParts, usableFix, inServiceArea, kmFromOtukpo, PRECISE_LOCATION_METERS } from '../location';
 import { distanceKm, suggestedRoute, bestRoute, saveRoute, hasSavedRoute, compassPoint, WALK_KMH } from '../routing';
@@ -63,11 +63,15 @@ export default function MapPage() {
     .sort((a, b) => origin ? distanceKm(origin, a) - distanceKm(origin, b) : a.name.localeCompare(b.name));
 
   useEffect(() => {
-    let active = true;
+    let active = true, fresh = false;
+    // Show what is saved on this phone straight away; never leave the map empty while the network decides.
+    getCachedResources().then(({ resources: saved, updatedAt }) => {
+      if (active && !fresh && saved.length) { setResources(saved); setStatus({ cached: true, updatedAt }); }
+    }).catch(() => {});
     const refresh = async () => {
       try {
         const data = await api.getResources();
-        if (active) { setResources(data); setStatus(getDataStatus()); }
+        if (active && (data.length || !fresh)) { fresh = !getDataStatus().cached; setResources(data); setStatus(getDataStatus()); }
       } catch { if (active) setNotice(translate('notice.readFailed')); }
     };
     const queue = async () => {
@@ -220,7 +224,7 @@ export default function MapPage() {
     clearRoute(); const requestId = ++routeRequest.current; setRouting(true);
     try {
       const hazards = resources.filter(r => r.type === 'hazard' && r.status === 'verified');
-      const result = await bestRoute(from, destination, key, hazards, { online: !offline && navigator.onLine });
+      const result = await bestRoute(from, destination, key, hazards, { online: !offline && connectionUsable(), wait: isServerReachable() ? 8000 : 3000 });
       if (requestId !== routeRequest.current) return;
       Object.assign(result, { startLabel: from.label, endLabel: destination.label || destination.name, phone: destination.contact_phone, guessed: from.guessed, far: from.far });
       setRoute(result); setPlanning(false); setSelected(null); setList(false);

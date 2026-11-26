@@ -240,6 +240,45 @@ async function api(endpoint, data, token) {
   await hotspot.close();
   assert.deepEqual(errors, []);
   console.log('PASS hotspot laptop: far-away fix rejected, explained, never saved as last known location');
+
+  // "Connected but no internet" (no data credit, captive Wi-Fi, spare laptop adapter): the browser still says online,
+  // but every request hangs. Simulated with a real Chrome profile behind a proxy that accepts and never answers.
+  const profile = path.join(__dirname, 'artifacts', 'dead-network-profile');
+  fs.rmSync(profile, { recursive: true, force: true });
+  const chrome = { executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', viewport: { width: 390, height: 780 }, isMobile: true, hasTouch: true,
+    geolocation: { latitude: 7.1935, longitude: 8.1372, accuracy: 12 }, permissions: ['geolocation'] };
+  let warm = await chromium.launchPersistentContext(profile, chrome);
+  let deadPage = warm.pages()[0] || await warm.newPage();
+  await deadPage.goto(base, { waitUntil: 'domcontentloaded' });
+  await deadPage.evaluate(async () => { await navigator.serviceWorker.ready; });
+  await deadPage.reload({ waitUntil: 'domcontentloaded' });
+  await deadPage.waitForFunction(() => document.querySelectorAll('.resource-pin').length >= 10);
+  await delay(3000);
+  await warm.close();
+  const sink = require('node:net').createServer(socket => socket.on('error', () => {})).listen(0, '127.0.0.1');
+  await new Promise(resolve => sink.once('listening', resolve));
+  const dead = await chromium.launchPersistentContext(profile, { ...chrome, proxy: { server: 'http://127.0.0.1:' + sink.address().port }, args: ['--proxy-bypass-list=<-loopback>'] });
+  try {
+    deadPage = dead.pages()[0] || await dead.newPage(); deadPage.on('pageerror', e => errors.push(e.message));
+    deadPage.goto(base, { waitUntil: 'commit' }).catch(() => {});
+    assert.equal(await deadPage.evaluate(() => navigator.onLine).catch(() => true), true);
+    await deadPage.waitForFunction(() => document.querySelectorAll('.resource-pin').length >= 10, null, { timeout: 4000 });
+    await deadPage.locator('.need-filters').getByRole('button', { name: 'Water' }).click();
+    await deadPage.locator('.resource-row').first().click();
+    let started = Date.now();
+    await deadPage.locator('.resource-details').getByRole('button', { name: 'Directions', exact: true }).click();
+    await deadPage.locator('.route-result').waitFor({ timeout: 4000 });
+    assert.ok(Date.now() - started < 4000, 'directions waited on a dead network');
+    await deadPage.goto(base + '/#/report', { waitUntil: 'commit' });
+    await deadPage.getByRole('button', { name: 'Water', exact: true }).click();
+    await deadPage.getByRole('button', { name: "Yes, it's here" }).click({ timeout: 15000 });
+    started = Date.now();
+    await deadPage.locator('form .report-primary').click();
+    await deadPage.getByRole('heading', { name: 'Saved on this device.' }).waitFor({ timeout: 6000 });
+    assert.ok(Date.now() - started < 6000, 'report waited on a dead network');
+  } finally { await dead.close(); sink.close(); }
+  assert.deepEqual(errors, []);
+  console.log('PASS dead network (says online, nothing answers): saved places at once, instant directions, report saved within seconds');
 })().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => {
   if (browser) await browser.close();
   if (server) server.kill();

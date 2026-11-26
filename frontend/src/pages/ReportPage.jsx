@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import L from 'leaflet';
-import { api } from '../api';
+import { api, connectionUsable } from '../api';
 import MapIcon, { iconMarkup } from '../components/MapIcon';
 import Signal from '../components/Signal';
 import { useI18n } from '../i18n';
@@ -35,13 +35,14 @@ export default function ReportPage() {
   const [publicContact, setPublicContact] = useState('');
   const [error, setError] = useState('');
   const [sending, setSending] = useState(false);
-  const [offline, setOffline] = useState(!navigator.onLine);
+  const [offline, setOffline] = useState(!connectionUsable());
   const mapNode = useRef(null), map = useRef(null), marker = useRef(null), userMoved = useRef(false);
 
   useEffect(() => {
-    const on = () => setOffline(false), off = () => setOffline(true);
-    window.addEventListener('online', on); window.addEventListener('offline', off);
-    return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off); };
+    // "Offline" also covers a connection that is up but not answering (no data credit, captive Wi-Fi).
+    const update = () => setOffline(!connectionUsable());
+    for (const name of ['online', 'offline', 'lifeline-connection']) window.addEventListener(name, update);
+    return () => { for (const name of ['online', 'offline', 'lifeline-connection']) window.removeEventListener(name, update); };
   }, []);
 
   const findMe = async () => {
