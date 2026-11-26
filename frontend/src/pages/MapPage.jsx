@@ -3,8 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import L from 'leaflet';
 import { api, syncOfflineReports, getDataStatus } from '../api';
 import db from '../db';
-import { locate, quickLocate, lastKnownLocation, locationPermission, accuracyLabel, PRECISE_LOCATION_METERS, USABLE_LOCATION_METERS } from '../location';
-import { distanceKm, suggestedRoute } from '../routing';
+import { locate, quickLocate, lastKnownLocation, locationPermission, accuracyLabel, ageParts, PRECISE_LOCATION_METERS, USABLE_LOCATION_METERS } from '../location';
+import { distanceKm, suggestedRoute, bestRoute, saveRoute, hasSavedRoute, compassPoint, WALK_KMH } from '../routing';
 import '../map.css';
 import MapIcon, { iconMarkup } from '../components/MapIcon';
 import { useI18n, translate, LANGUAGES } from '../i18n';
@@ -38,12 +38,15 @@ function isStale(value, now = Date.now()) {
   const date = parseDate(value);
   return !date || now - date.getTime() > STALE_HOURS * 3600 * 1000;
 }
+const metresLabel = km => km < 1 ? `${Math.max(10, Math.round(km * 100) * 10)} m` : `${km.toFixed(1)} km`;
+const destinationKey = (id, isLandmark) => (isLandmark ? 'lm:' : '') + id;
+
 export default function MapPage() {
   const navigate = useNavigate();
   const { t, lang, setLanguage } = useI18n();
   const typeName = id => t('type.' + id);
   const mapNode = useRef(null), map = useRef(null), markers = useRef(null), locationLayer = useRef(null), routeLayer = useRef(null);
-  const locationRequest = useRef(0), routeRequest = useRef(0);
+  const locationRequest = useRef(0), routeRequest = useRef(0), prefetchedAt = useRef('');
   const [resources, setResources] = useState([]), [filter, setFilter] = useState(''), [search, setSearch] = useState('');
   const [selected, setSelected] = useState(null), [list, setList] = useState(false), [planning, setPlanning] = useState(false);
   const [offline, setOffline] = useState(!navigator.onLine), [status, setStatus] = useState(getDataStatus());
@@ -159,6 +162,24 @@ export default function MapPage() {
     return () => { map.current?.off('click', click); if (map.current) map.current.getContainer().style.cursor = ''; };
   }, [picking]);
 
+  // While online, quietly save road routes from here to the nearest place of each kind,
+  // so "Directions" still shows real roads if the network drops later.
+  useEffect(() => {
+    if (offline || !location || location.manual || !resources.length) return;
+    const cell = location.lat.toFixed(2) + ',' + location.lng.toFixed(2);
+    if (prefetchedAt.current === cell) return;
+    prefetchedAt.current = cell;
+    const here = { lat: location.lat, lng: location.lng };
+    const hazards = resources.filter(r => r.type === 'hazard' && r.status === 'verified');
+    (async () => {
+      for (const [type] of TYPES.filter(([id]) => id !== 'hazard')) {
+        const nearest = resources.filter(r => r.type === type).sort((a, b) => distanceKm(here, a) - distanceKm(here, b))[0];
+        if (!nearest || distanceKm(here, nearest) > 80 || hasSavedRoute(here, nearest.id)) continue;
+        try { saveRoute(here, nearest.id, await suggestedRoute(here, nearest, hazards)); } catch { return; }
+      }
+    })();
+  }, [location, resources, offline]);
+
   const clearRoute = () => { routeRequest.current++; setRouting(false); setRoute(null); setRouteError(''); routeLayer.current?.clearLayers(); };
   const useLocation = async () => {
     setPlanning(false); setList(false); setSelected(null); setMenu(false);
@@ -182,26 +203,51 @@ export default function MapPage() {
     setStart('otukpo'); setEnd('apa'); setSelected(null); setList(false); setPlanning(false); setLocationMessage('Demo start: Otukpo town centre.');
     map.current.setView([7.1904, 8.1345], 12);
   };
-  const calculate = async () => {
+  const drawRoute = (result, from) => {
+    routeLayer.current.clearLayers();
+    const color = result.remaining ? '#b73333' : '#005da8';
+    const line = L.polyline(result.points.map(p => [p.lat, p.lng]), result.kind === 'straight'
+      ? { color, weight: 5, dashArray: '1 12', lineCap: 'round' } : { color, weight: 5 }).addTo(routeLayer.current);
+    // A saved route may start a short walk away: show that first stretch as a dotted line.
+    if (result.kind === 'saved' && result.gapKm > 0.05) L.polyline([[from.lat, from.lng], [result.points[0].lat, result.points[0].lng]], { color, weight: 4, dashArray: '1 10', lineCap: 'round' }).addTo(routeLayer.current);
+    map.current.fitBounds(line.getBounds().extend([from.lat, from.lng]), { padding: [50, 50], maxZoom: 16 });
+  };
+  // Works online and offline: live road route, then a road route saved on this phone, then a compass direction.
+  const showRoute = async (from, destination, key) => {
+    if (distanceKm(from, destination) < 0.01) { setRouteError('Choose a different destination from your starting point.'); return; }
+    clearRoute(); const requestId = ++routeRequest.current; setRouting(true);
+    try {
+      const hazards = resources.filter(r => r.type === 'hazard' && r.status === 'verified');
+      const result = await bestRoute(from, destination, key, hazards, { online: !offline && navigator.onLine });
+      if (requestId !== routeRequest.current) return;
+      Object.assign(result, { startLabel: from.label, endLabel: destination.label || destination.name, phone: destination.contact_phone, guessed: from.guessed });
+      setRoute(result); setPlanning(false); setSelected(null); setList(false);
+      drawRoute(result, from);
+    } catch (error) { if (requestId === routeRequest.current) setRouteError(error.message); }
+    finally { if (requestId === routeRequest.current) setRouting(false); }
+  };
+  const youLabel = point => point.manual ? 'Your chosen pin' : point.lastKnown ? t('route.youLast') : t('route.you');
+  // Directions straight from a place card: start from wherever the person is, with no form to fill.
+  const routeTo = async destination => {
+    let from = start === 'location' && confirmed && location ? location : null;
+    if (!from) {
+      setRouting(true);
+      const fresh = await quickLocate().catch(() => null);
+      if (fresh && fresh.accuracy <= USABLE_LOCATION_METERS) { from = fresh; locationRequest.current++; setLocation(fresh); setConfirmed(true); setStart('location'); }
+      else { const last = lastKnownLocation(); if (last) from = { ...last, lastKnown: true }; }
+    }
+    from = from ? { ...from, label: youLabel(from) } : { ...LANDMARKS.otukpo, guessed: true };
+    await showRoute(from, destination, destinationKey(destination.id));
+  };
+  const calculate = () => {
     setRouteError('');
-    if (offline) { setRouteError('New routes require internet. Any route already displayed remains visible.'); return; }
     if (!origin) { setRouteError('Choose a landmark or confirm your starting pin.'); return; }
     const destination = LANDMARKS[end] || resources.find(r => r.id === end);
     if (!destination) { setRouteError('Please choose a destination.'); return; }
-    if (distanceKm(origin, destination) < 0.01) { setRouteError('Choose a different destination from your starting point.'); return; }
-    clearRoute(); const requestId = ++routeRequest.current; setRouting(true);
-    try {
-      const result = await suggestedRoute(origin, destination, resources.filter(r => r.type === 'hazard' && r.status === 'verified'));
-      if (requestId !== routeRequest.current) return;
-      result.startLabel = origin.label || (location?.manual ? 'Your chosen pin' : 'Your location'); result.endLabel = destination.label || destination.name;
-      result.cachedData = getDataStatus().cached;
-      setRoute(result);
-      setPlanning(false);
-      const line = L.polyline(result.points.map(p => [p.lat, p.lng]), { color: result.remaining ? '#b73333' : '#005da8', weight: 5 }).addTo(routeLayer.current);
-      map.current.fitBounds(line.getBounds(), { padding: [50, 50] });
-    } catch (error) { if (requestId === routeRequest.current) setRouteError(error.name === 'TimeoutError' ? 'Routing timed out. Please try again.' : error.message); }
-    finally { if (requestId === routeRequest.current) setRouting(false); }
+    showRoute({ ...origin, label: origin.label || youLabel(origin) }, destination, destinationKey(end, Boolean(LANDMARKS[end])));
   };
+  const walkTime = km => { const mins = km / WALK_KMH * 60; return mins < 60 ? t('unit.mins', { n: Math.max(5, Math.round(mins / 5) * 5) }) : t('unit.hours', { n: Math.round(mins / 30) / 2 }); };
+  const ago = at => { const a = ageParts(new Date(at).getTime()); if (a.unit === 'min' && a.n < 1) return t('route.justNow'); return `${a.n} ${t('unit.' + a.unit)}`; };
   const sync = async () => {
     setSyncing(true);
     try { const count = await syncOfflineReports(); setNotice(t(count ? 'notice.synced' : 'notice.noneSynced')); }
@@ -253,9 +299,22 @@ export default function MapPage() {
       <button className="locate-control icon-button" onClick={useLocation} disabled={locating} aria-label="Use my location" title="Use my location"><MapIcon name="location" /></button>
       {(locationMessage || picking) && <div className="location-notice" role="status"><p>{picking ? 'Tap the map to choose your starting point.' : locationMessage}</p>{location && !confirmed && !picking && <button onClick={() => { clearRoute(); setConfirmed(true); setStart('location'); setLocationMessage(`Starting point confirmed by you · Browser accuracy ${accuracyLabel(location.accuracy)}`); }}>Use this estimate</button>}<button onClick={placePin}><MapIcon name="pin" />{picking ? 'Cancel pin' : 'Place a pin'}</button><button aria-label="Dismiss location message" onClick={() => { setLocationMessage(''); setPicking(false); }}>Dismiss</button></div>}
       {list && <section className="map-panel resource-list"><div className="panel-heading"><h2>{t('list.heading')}</h2><button onClick={() => setList(false)}>{t('close')}</button></div><label>{t('list.search')}<input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder={t('list.placeholder')} /></label><p className="muted">{t('list.distances', { origin: origin?.label || t('list.yourPin') })}</p>{visible.length === 0 && <p>{t(offline ? 'list.noneOffline' : 'list.none')}</p>}{visible.map(r => <button className="resource-row" key={r.id} onClick={() => select(r)}><strong>{r.name}</strong><span>{typeName(r.type)} · {origin ? `${distanceKm(origin, r).toFixed(1)} km` : t('list.noDistance')}</span><small>{isStale(r.verified_at) && <em className="stale-badge">{t('fresh.stale')}</em>}{t('list.verified', { date: dateLabel(r.verified_at) })}</small></button>)}</section>}
-      {planning && <section className="map-panel route-panel"><div className="panel-heading"><h2>Plan your journey</h2><button onClick={() => setPlanning(false)}>Close</button></div><p className="muted">Choose where you are and where you need to go.</p><div className="route-location-actions"><button aria-label="Find route starting location" onClick={useLocation} disabled={locating}>Use my location</button><button onClick={placePin}>Place a pin</button></div><label>Starting point<select value={start} onChange={e => { setStart(e.target.value); clearRoute(); }}>{confirmed && location && <option value="location">{location.manual ? 'Your chosen pin' : 'Your location'}</option>}{Object.entries(LANDMARKS).map(([id, p]) => <option key={id} value={id}>{p.label}</option>)}</select></label><label>Destination<select value={end} onChange={e => { setEnd(e.target.value); clearRoute(); }}><optgroup label="Landmarks">{Object.entries(LANDMARKS).map(([id, p]) => <option key={id} value={id}>{p.label}</option>)}</optgroup><optgroup label="Resources">{resources.filter(r => r.type !== 'hazard').map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</optgroup></select></label><button className="primary" disabled={routing || offline} onClick={calculate}>{routing ? 'Finding a road route…' : 'Find suggested route'}</button>{offline && <p className="warning">New routes require internet. Previously displayed routes remain visible.</p>}{routeError && <p className="warning" role="alert">{routeError}</p>}</section>}
-      {route && <aside className={`route-result ${route.remaining ? 'danger' : ''}`} role="status"><strong>{route.remaining ? 'Hazards remain on route' : 'Suggested road route'} · {route.distance.toFixed(1)} km</strong><p>{route.startLabel} → {route.endLabel}</p><p>{route.message}</p>{route.avoided > 0 && <p>{route.avoided} reported hazard(s) avoided.</p>}{(offline || route.cachedData) && <p>Uses saved information; hazards may have changed.</p>}<small>Calculated {dateLabel(route.createdAt)}</small><button onClick={clearRoute}>Clear route</button></aside>}
-      {selected && <section className="map-panel resource-details"><div className="panel-heading">{isStale(selected.verified_at) ? <span className="verified stale">{t('fresh.stale')}</span> : <span className="verified">{t('details.verified')}</span>}<button onClick={() => setSelected(null)}>{t('close')}</button></div><h2>{selected.name}</h2><p className="resource-distance">{origin && t('details.distance', { km: distanceKm(origin, selected).toFixed(1), origin: origin.label || t('list.yourPin') })}</p><p className="muted">{t('details.lastVerified', { date: dateLabel(selected.verified_at) })}</p>{isStale(selected.verified_at) && <p className="stale-note" role="note">{t('fresh.staleNote')}</p>}<p>{selected.description || t('details.noDetails')}</p>{selected.capacity != null && <p>{t('details.capacity')} <strong>{selected.capacity}</strong> · {t('details.spacesUnknown')}</p>}<details><summary>{t('details.coordinates')}</summary><p>{Number(selected.lat).toFixed(4)}, {Number(selected.lng).toFixed(4)}</p></details><div className="card-actions">{selected.contact_phone && <a className="call-button primary-call" href={`tel:${selected.contact_phone.replace(/[^+\d]/g, '')}`}><MapIcon name="phone" />{t('details.call')}</a>}{selected.type !== 'hazard' && <button className={selected.contact_phone ? '' : 'primary'} onClick={() => { clearRoute(); setEnd(selected.id); setSelected(null); setPlanning(true); }}>{t('details.directions')}</button>}</div></section>}
+      {planning && <section className="map-panel route-panel"><div className="panel-heading"><h2>Plan your journey</h2><button onClick={() => setPlanning(false)}>Close</button></div><p className="muted">Choose where you are and where you need to go.</p><div className="route-location-actions"><button aria-label="Find route starting location" onClick={useLocation} disabled={locating}>Use my location</button><button onClick={placePin}>Place a pin</button></div><label>Starting point<select value={start} onChange={e => { setStart(e.target.value); clearRoute(); }}>{confirmed && location && <option value="location">{location.manual ? 'Your chosen pin' : 'Your location'}</option>}{Object.entries(LANDMARKS).map(([id, p]) => <option key={id} value={id}>{p.label}</option>)}</select></label><label>Destination<select value={end} onChange={e => { setEnd(e.target.value); clearRoute(); }}><optgroup label="Landmarks">{Object.entries(LANDMARKS).map(([id, p]) => <option key={id} value={id}>{p.label}</option>)}</optgroup><optgroup label="Resources">{resources.filter(r => r.type !== 'hazard').map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</optgroup></select></label><button className="primary" disabled={routing} onClick={calculate}>{routing ? t('route.finding') : 'Show the way'}</button>{routeError && <p className="warning" role="alert">{routeError}</p>}</section>}
+      {routing && !planning && <div className="map-toast" role="status">{t('route.finding')}</div>}
+      {route && <aside className={`route-result ${route.remaining ? 'danger' : ''}`} role="status">
+        <div className="route-head">{route.kind === 'straight' && <span className="route-compass" aria-hidden="true" style={{ transform: `rotate(${route.bearing}deg)` }}>↑</span>}
+          <strong>{t('route.' + route.kind, { km: route.distance.toFixed(1), dir: t('dir.' + compassPoint(route.bearing || 0)) })}</strong></div>
+        <p className="route-walk">{t('route.walk', { time: walkTime(route.distance) })}</p>
+        <p>{t('route.from', { from: route.startLabel, to: route.endLabel })}</p>
+        {route.guessed && <p className="warning">{t('route.fromGuess')}</p>}
+        {route.kind === 'straight' && <p className="route-note">{t('route.straightNote', { dir: t('dir.' + compassPoint(route.bearing)) })}</p>}
+        {route.kind === 'saved' && <p className="route-note">{t('route.savedNote', { age: ago(route.createdAt) })}</p>}
+        {route.kind === 'saved' && route.gapKm > 0.05 && <p>{t('route.savedGap', { m: metresLabel(route.gapKm) })}</p>}
+        <p className={route.remaining ? 'route-danger' : ''}>{t(route.remaining ? 'route.danger' : 'route.clear', { n: route.remaining })}</p>
+        {route.avoided > 0 && <p>{t('route.avoided', { n: route.avoided })}</p>}
+        <div className="card-actions">{route.phone && <a className="call-button primary-call" href={`tel:${route.phone.replace(/[^+\d]/g, '')}`}><MapIcon name="phone" />{t('details.call')}</a>}<button onClick={clearRoute}>{t('route.close')}</button></div>
+      </aside>}
+      {selected && <section className="map-panel resource-details"><div className="panel-heading">{isStale(selected.verified_at) ? <span className="verified stale">{t('fresh.stale')}</span> : <span className="verified">{t('details.verified')}</span>}<button onClick={() => setSelected(null)}>{t('close')}</button></div><h2>{selected.name}</h2><p className="resource-distance">{origin && t('details.distance', { km: distanceKm(origin, selected).toFixed(1), origin: origin.label || t('list.yourPin') })}</p><p className="muted">{t('details.lastVerified', { date: dateLabel(selected.verified_at) })}</p>{isStale(selected.verified_at) && <p className="stale-note" role="note">{t('fresh.staleNote')}</p>}<p>{selected.description || t('details.noDetails')}</p>{selected.capacity != null && <p>{t('details.capacity')} <strong>{selected.capacity}</strong> · {t('details.spacesUnknown')}</p>}<details><summary>{t('details.coordinates')}</summary><p>{Number(selected.lat).toFixed(4)}, {Number(selected.lng).toFixed(4)}</p></details><div className="card-actions">{selected.contact_phone && <a className="call-button primary-call" href={`tel:${selected.contact_phone.replace(/[^+\d]/g, '')}`}><MapIcon name="phone" />{t('details.call')}</a>}{selected.type !== 'hazard' && <button className={selected.contact_phone ? '' : 'primary'} disabled={routing} onClick={() => routeTo(selected)}><MapIcon name="route" />{t('details.directions')}</button>}</div></section>}
       {notice && <div className="map-toast" role="status">{notice}<button onClick={() => setNotice('')} aria-label={t('notice.dismiss')}>×</button></div>}
       <button className="report-action" aria-label="+ Report a resource or hazard" onClick={() => navigate('/report')}><MapIcon name="report" />{t('nav.report')}</button>
       <div className="demo-label">{t('demo.label')}</div>

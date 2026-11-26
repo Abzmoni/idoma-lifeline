@@ -85,15 +85,11 @@ const tilesReady = page => page.waitForFunction(() => [...document.querySelector
 
     // 2. Directions (live road-routing provider)
     await press(page.locator('.resource-details').getByRole('button', { name: 'Directions', exact: true }));
-    await caption(page, 'Directions: pick a starting landmark and request a road route.', 2800);
-    await press(page.getByRole('button', { name: 'Find suggested route' }));
-    const routed = await page.locator('.route-result').waitFor({ timeout: 15000 }).then(() => true).catch(() => false);
+    await page.locator('.route-result').waitFor({ timeout: 20000 });
     await tilesReady(page);
-    await caption(page, routed
-      ? 'Every suggested route is checked against verified hazards, and any warning stays visible.'
-      : 'Road routing needs internet; if the provider is unavailable the app says so instead of guessing.', 4500);
-    if (routed) await press(page.locator('.route-result').getByRole('button', { name: 'Clear route' }));
-    else if (await page.getByRole('heading', { name: 'Plan your journey' }).count()) await press(page.locator('.route-panel').getByRole('button', { name: 'Close' }));
+    await caption(page, 'One tap on Directions: the way from where you are, walking time, and any reported dangers on the route.', 4800);
+    await caption(page, 'Routes are saved on the phone, so directions still work when the network drops.', 3600);
+    await press(page.locator('.route-result').getByRole('button', { name: 'Close route' }));
 
     // 3. Language
     await page.locator('.need-filters').getByRole('button', { name: 'All', exact: true }).click();
@@ -113,6 +109,13 @@ const tilesReady = page => page.waitForFunction(() => [...document.querySelector
     await page.getByText(/Offline · Saved information/).waitFor();
     await tilesReady(page);
     await caption(page, 'Reloaded with no connection: the app, saved resources and viewed map areas still work.', 4500);
+    await press(page.locator('.need-filters').getByRole('button', { name: 'Medical' }));
+    await press(page.locator('.resource-row').first());
+    await press(page.locator('.resource-details').getByRole('button', { name: 'Directions', exact: true }));
+    await page.locator('.route-result').waitFor({ timeout: 20000 });
+    await caption(page, 'Directions with no internet: the road route saved on this phone, or a compass direction if none is saved.', 5000);
+    await press(page.locator('.route-result').getByRole('button', { name: 'Close route' }));
+    await page.locator('.need-filters').getByRole('button', { name: 'Medical' }).click();
 
     // 5. Report while offline
     await press(page.locator('.report-action'));

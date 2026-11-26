@@ -21,7 +21,7 @@ The backend uses SQLite by default, or PostgreSQL/PostGIS when DATABASE_URL is s
 
 **0:00–0:20:** “A displaced family near Otukpo needs shelter. Local information changes quickly, and internet access can drop.”
 
-**0:20–0:55:** Choose Shelter, open List view, select a facility, show verification time and total capacity. Open Directions, explicitly select a starting landmark, and show the suggested road route. Route warnings stay visible; no route is guaranteed safe.
+**0:20–0:55:** Choose Shelter, open List view, select a facility, show verification time and total capacity. Tap Directions: the route appears straight away from the person's location, with walking time and any reported dangers. No form to fill. Route warnings stay visible; no route is guaranteed safe.
 
 **0:55–1:35:** Disconnect the browser from the network. Reload the production app to show saved resources. Tap **Report → Water**: the pin is placed automatically (phone GPS works without data; otherwise the last known location, or tap a town). Tap **Yes, it's here**, then **Save report**. Show “Saved on this device” and the waiting-to-sync count on the map.
 
@@ -38,6 +38,6 @@ The browser supplies an estimate, not a guaranteed GPS fix. A laptop may have a 
 ## Claims to keep precise
 
 - Built: resource discovery, reporting, coordinator review, saved resources, queued reports with retry deduplication, road-route hazard checks.
-- Offline: cached application, saved resources, previously viewed map tiles, report storage. New road routes require internet. A route already on screen stays visible when the connection drops.
+- Offline: cached application, saved resources, previously viewed map tiles, report storage, and directions. While online the app quietly saves road routes from the person to the nearest place of each kind (and every route they open). Offline, Directions uses a saved road route that starts within 1.5 km; otherwise it shows a compass direction, straight-line distance and walking time, clearly labelled as not a road.
 - Simulated: sample resource availability, SMS/USSD gateway interactions. Real place names do not establish real facility availability.
 - Next: field validation, live telecom integration, operational verification/expiry policies, deployment hardening. Do not claim measured impact or signed partners without evidence.

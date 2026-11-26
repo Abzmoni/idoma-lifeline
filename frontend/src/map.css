@@ -41,3 +41,12 @@
 .call-button.primary-call .map-icon { width:18px; height:18px; display:inline-flex; }
 .card-actions>* { min-height:52px; font-size:16px; }
 .need-filters button { min-height:44px; }
+/* Directions result: big, plain, readable under stress */
+.route-head { display:flex; align-items:center; gap:10px; }
+.route-compass { display:inline-flex; align-items:center; justify-content:center; flex:0 0 40px; width:40px; height:40px; border-radius:20px; background:#005da8; color:#fff; font-size:24px; font-weight:800; line-height:1; }
+.route-result.danger .route-compass { background:#b73333; }
+.route-walk { font-size:14px; font-weight:700; color:#1b2430; }
+.route-note { background:#eef4fb; border-radius:6px; padding:8px 10px; }
+.route-danger { color:#9a3520; font-weight:700; }
+.route-result .card-actions button { margin-top:0; justify-content:center; }
+.resource-details .card-actions button { display:flex; align-items:center; justify-content:center; gap:6px; }

@@ -95,33 +95,48 @@ async function api(endpoint, data, token) {
   await page.waitForFunction(() => [...document.querySelectorAll('.leaflet-tile')].some(img => img.complete && img.naturalWidth === 256));
   await page.screenshot({ path: path.join(__dirname, 'artifacts/desktop.png') });
   const destinationName = await page.locator('.resource-details h2').innerText();
+  // Deterministic road provider: this geometry passes a verified hazard and cannot avoid it.
+  await page.route('https://router.project-osrm.org/**', route => route.fulfill({ json: { routes: [{ distance: 65000, geometry: { coordinates: [[8.1345, 7.1904], [8.05, 7.35], [7.8333, 7.5833]] } }] } }));
   await page.locator('.resource-details').getByRole('button', { name: 'Directions', exact: true }).click();
-  const destinationId = await page.locator('.route-panel select').nth(1).inputValue();
+  await page.locator('.route-result').getByText(/^Road route ·/).waitFor();
+  assert.ok((await page.locator('.route-result').innerText()).includes(destinationName));
+  assert.equal(await page.locator('.route-panel').count(), 0);
+  console.log('PASS one-tap directions: a place card shows the route straight away');
+  await page.getByRole('button', { name: 'Close route', exact: true }).click();
+
+  await page.getByRole('button', { name: 'Directions', exact: true }).click();
   await page.getByRole('button', { name: 'Place a pin', exact: true }).click();
   await page.locator('.map-surface').click({ position: { x: 1000, y: 500 } });
   await page.getByRole('heading', { name: 'Plan your journey' }).waitFor();
   assert.equal(await page.locator('.route-panel select').first().inputValue(), 'location');
-  assert.equal(await page.locator('.route-panel select').nth(1).inputValue(), destinationId);
-  assert.equal(await page.locator('.route-panel select').nth(1).locator('option:checked').innerText(), destinationName);
-  assert.equal(await page.getByRole('button', { name: 'Find suggested route' }).isEnabled(), true);
+  assert.equal(await page.getByRole('button', { name: 'Show the way' }).isEnabled(), true);
   assert.equal(await page.locator('.location-notice').count(), 0);
-  console.log('PASS pin placement: route form reopens with confirmed start and original destination');
+  console.log('PASS pin placement: route form reopens with the chosen pin as the start');
   await page.getByRole('button', { name: 'More options' }).click();
   await page.getByRole('button', { name: 'Otukpo demo', exact: true }).click();
   await page.getByRole('button', { name: 'Dismiss location message' }).click();
-  // Exercise the warning UI with a deterministic provider response that cannot avoid a hazard.
-  await page.route('https://router.project-osrm.org/**', route => route.fulfill({ json: { routes: [{ distance: 65000, geometry: { coordinates: [[8.1345, 7.1904], [8.05, 7.35], [7.8333, 7.5833]] } }] } }));
   await page.getByRole('button', { name: 'Directions', exact: true }).click();
-  await page.getByRole('button', { name: 'Find suggested route' }).click();
-  await page.getByText(/Hazards remain on route/).waitFor();
-  assert.equal(await page.locator('.route-result').getByText(/avoided/).count(), 0);
+  await page.getByRole('button', { name: 'Show the way' }).click();
+  await page.locator('.route-result').getByText(/reported danger\(s\) near this way/).waitFor();
+  assert.equal(await page.locator('.route-result').getByText(/Went around/).count(), 0);
   await page.screenshot({ path: path.join(__dirname, 'artifacts/route-warning.png') });
-  console.log('PASS browser: approximate laptop fix, precise phone fix, explicit confirmation, resource cards');
+  console.log('PASS browser: approximate laptop fix, precise phone fix, explicit confirmation, resource cards, hazard warning');
 
   await context.setOffline(true);
-  await page.getByText(/Hazards remain on route/).waitFor();
+  await page.locator('.route-result').getByText(/reported danger/).waitFor();
+  // Offline, the same journey uses the road route saved on this phone.
   await page.getByRole('button', { name: 'Directions', exact: true }).click();
-  assert.equal(await page.getByRole('button', { name: 'Find suggested route' }).isDisabled(), true);
+  await page.getByRole('button', { name: 'Show the way' }).click();
+  await page.locator('.route-result').getByText(/^Saved road route ·/).waitFor();
+  await page.locator('.route-result').getByText(/No internet, so this is a route saved on this phone/).waitFor();
+  // A journey never fetched before still gets a compass direction and distance.
+  await page.getByRole('button', { name: 'Directions', exact: true }).click();
+  await page.locator('.route-panel select').nth(1).selectOption('market');
+  await page.getByRole('button', { name: 'Show the way' }).click();
+  await page.locator('.route-result').getByText(/^Go (north|south|east|west|north-east|north-west|south-east|south-west) · /).waitFor();
+  await page.locator('.route-result .route-compass').waitFor();
+  await page.screenshot({ path: path.join(__dirname, 'artifacts/route-offline-compass.png') });
+  console.log('PASS offline directions: saved road route, then compass direction when nothing is saved');
   await page.reload();
   await page.getByText(/Offline · Saved information/).waitFor();
   await page.getByRole('button', { name: '+ Report a resource or hazard', exact: true }).click();
