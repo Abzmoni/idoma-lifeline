@@ -43,6 +43,8 @@ function isStale(value, now = Date.now()) {
 const metresLabel = km => km < 1 ? `${Math.max(10, Math.round(km * 100) * 10)} m` : `${km.toFixed(1)} km`;
 const destinationKey = (id, isLandmark) => (isLandmark ? 'lm:' : '') + id;
 
+const isPhone = () => window.matchMedia('(max-width: 760px)').matches;
+
 export default function MapPage() {
   const navigate = useNavigate();
   const { t, lang, setLanguage } = useI18n();
@@ -52,6 +54,8 @@ export default function MapPage() {
   const [resources, setResources] = useState([]), [filter, setFilter] = useState(''), [search, setSearch] = useState('');
   const [selected, setSelected] = useState(null), [list, setList] = useState(false), [planning, setPlanning] = useState(false);
   const [offline, setOffline] = useState(!navigator.onLine), [status, setStatus] = useState(getDataStatus());
+  // On a phone the directions card starts folded to one line, so the route on the map stays in view.
+  const [routeOpen, setRouteOpen] = useState(true);
   const [pending, setPending] = useState(0), [syncing, setSyncing] = useState(false), [notice, setNotice] = useState('');
   const [queueError, setQueueError] = useState('');
   const [menu, setMenu] = useState(false);
@@ -220,7 +224,7 @@ export default function MapPage() {
       ? { color, weight: 5, dashArray: '1 12', lineCap: 'round' } : { color, weight: 5 }).addTo(routeLayer.current);
     // A saved route may start a short walk away: show that first stretch as a dotted line.
     if (result.kind === 'saved' && result.gapKm > 0.05) L.polyline([[from.lat, from.lng], [result.points[0].lat, result.points[0].lng]], { color, weight: 4, dashArray: '1 10', lineCap: 'round' }).addTo(routeLayer.current);
-    map.current.fitBounds(line.getBounds().extend([from.lat, from.lng]), { padding: [50, 50], maxZoom: 16 });
+    map.current.fitBounds(line.getBounds().extend([from.lat, from.lng]), { paddingTopLeft: [50, 50], paddingBottomRight: [50, isPhone() ? 150 : 50], maxZoom: 16 });
   };
   // Works online and offline: live road route, then a road route saved on this phone, then a compass direction.
   const showRoute = async (from, destination, key) => {
@@ -231,7 +235,7 @@ export default function MapPage() {
       const result = await bestRoute(from, destination, key, hazards, { online: !offline && connectionUsable(), wait: isServerReachable() ? 8000 : 3000 });
       if (requestId !== routeRequest.current) return;
       Object.assign(result, { startLabel: from.label, endLabel: destination.label || destination.name, phone: destination.contact_phone, guessed: from.guessed, far: from.far });
-      setRoute(result); setPlanning(false); setSelected(null); setList(false);
+      setRoute(result); setRouteOpen(!isPhone()); setPlanning(false); setSelected(null); setList(false);
       drawRoute(result, from);
     } catch (error) { if (requestId === routeRequest.current) setRouteError(error.message); }
     finally { if (requestId === routeRequest.current) setRouting(false); }
@@ -313,18 +317,21 @@ export default function MapPage() {
       {list && <section className="map-panel resource-list"><div className="panel-heading"><h2>{t('list.heading')}</h2><button onClick={() => setList(false)}>{t('close')}</button></div><label>{t('list.search')}<input type="text" value={search} onChange={e => setSearch(e.target.value)} placeholder={t('list.placeholder')} /></label><p className="muted">{t('list.distances', { origin: origin?.label || t('list.yourPin') })}</p>{visible.length === 0 && <p>{t(offline ? 'list.noneOffline' : 'list.none')}</p>}{visible.map(r => <button className="resource-row" key={r.id} onClick={() => select(r)}><strong>{r.name}</strong><span>{typeName(r.type)} · {origin ? `${distanceKm(origin, r).toFixed(1)} km` : t('list.noDistance')}</span><small>{isStale(r.verified_at) && <em className="stale-badge">{t('fresh.stale')}</em>}{t('list.verified', { date: dateLabel(r.verified_at) })}</small></button>)}</section>}
       {planning && <section className="map-panel route-panel"><div className="panel-heading"><h2>Plan your journey</h2><button onClick={() => setPlanning(false)}>Close</button></div><p className="muted">Choose where you are and where you need to go.</p><div className="route-location-actions"><button aria-label="Find route starting location" onClick={useLocation} disabled={locating}>Use my location</button><button onClick={placePin}>Place a pin</button></div><label>Starting point<select value={start} onChange={e => { setStart(e.target.value); clearRoute(); }}>{confirmed && location && <option value="location">{location.manual ? 'Your chosen pin' : 'Your location'}</option>}{Object.entries(LANDMARKS).map(([id, p]) => <option key={id} value={id}>{p.label}</option>)}</select></label><label>Destination<select value={end} onChange={e => { setEnd(e.target.value); clearRoute(); }}><optgroup label="Landmarks">{Object.entries(LANDMARKS).map(([id, p]) => <option key={id} value={id}>{p.label}</option>)}</optgroup><optgroup label="Resources">{resources.filter(r => r.type !== 'hazard').map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</optgroup></select></label><button className="primary" disabled={routing} onClick={calculate}>{routing ? t('route.finding') : 'Show the way'}</button>{routeError && <p className="warning" role="alert">{routeError}</p>}</section>}
       {routing && !planning && <div className="map-toast" role="status">{t('route.finding')}</div>}
-      {route && <aside className={`route-result ${route.remaining ? 'danger' : ''}`} role="status">
+      {route && <aside className={`route-result ${route.remaining ? 'danger' : ''} ${routeOpen ? 'open' : 'folded'}`} role="status">
         <div className="route-head"><span className="pin-tile route-tile" aria-hidden="true">{route.kind === 'straight' ? <span className="route-arrow" style={{ transform: `rotate(${route.bearing}deg)` }}>↑</span> : <MapIcon name={route.remaining ? 'hazard' : 'route'} />}</span>
-          <strong>{t('route.' + route.kind, { km: route.distance.toFixed(1), dir: t('dir.' + compassPoint(route.bearing || 0)) })}</strong></div>
-        <p className="route-walk">{t('route.walk', { time: walkTime(route.distance) })}</p>
-        <p>{t('route.from', { from: route.startLabel, to: route.endLabel })}</p>
+          <button className="route-summary" aria-expanded={routeOpen} aria-label={t(routeOpen ? 'route.less' : 'route.more')} onClick={() => setRouteOpen(!routeOpen)}><strong>{t('route.' + route.kind, { km: route.distance.toFixed(1), dir: t('dir.' + compassPoint(route.bearing || 0)) })}</strong><span className="route-walk">{t('route.walk', { time: walkTime(route.distance) })}</span></button>
+          <button className="route-fold" aria-hidden="true" tabIndex={-1} onClick={() => setRouteOpen(!routeOpen)}><MapIcon name="chevron" /></button>
+          {!routeOpen && <button className="route-x" aria-label={t('route.close')} onClick={clearRoute}>×</button>}</div>
+        {!routeOpen && route.remaining > 0 && <p className="route-danger">{t('route.danger', { n: route.remaining })}</p>}
+        {!routeOpen && route.far && <p className="warning">{t('route.far')}</p>}
+        {routeOpen && <><p>{t('route.from', { from: route.startLabel, to: route.endLabel })}</p>
         {route.far && <p className="warning">{t('route.far')}</p>}{route.guessed && !route.far && <p className="warning">{t('route.fromGuess')}</p>}
         {route.kind === 'straight' && <p className="route-note">{t('route.straightNote', { dir: t('dir.' + compassPoint(route.bearing)) })}</p>}
         {route.kind === 'saved' && <p className="route-note">{t('route.savedNote', { age: ago(route.createdAt) })}</p>}
         {route.kind === 'saved' && route.gapKm > 0.05 && <p>{t('route.savedGap', { m: metresLabel(route.gapKm) })}</p>}
         <p className={route.remaining ? 'route-danger' : ''}>{t(route.remaining ? 'route.danger' : 'route.clear', { n: route.remaining })}</p>
         {route.avoided > 0 && <p>{t('route.avoided', { n: route.avoided })}</p>}
-        <div className="card-actions">{route.phone && <a className="call-button primary-call" href={`tel:${route.phone.replace(/[^+\d]/g, '')}`}><MapIcon name="phone" />{t('details.call')}</a>}<button onClick={clearRoute}>{t('route.close')}</button></div>
+        <div className="card-actions">{route.phone && <a className="call-button primary-call" href={`tel:${route.phone.replace(/[^+\d]/g, '')}`}><MapIcon name="phone" />{t('details.call')}</a>}<button onClick={clearRoute}>{t('route.close')}</button></div></>}
       </aside>}
       {selected && <section className="map-panel resource-details"><div className="panel-heading"><div className="card-kind"><span className="pin-tile" style={{ background: (TYPES.find(x => x[0] === selected.type) || TYPES[0])[2] }}><MapIcon name={selected.type} /></span><span><b>{typeName(selected.type)}</b>{isStale(selected.verified_at) ? <em className="verified stale">{t('fresh.stale')}</em> : <em className="verified"><MapIcon name="check" />{t('details.verified')}</em>}</span></div><button onClick={() => setSelected(null)}>{t('close')}</button></div><h2>{selected.name}</h2><p className="resource-distance">{origin && t('details.distance', { km: distanceKm(origin, selected).toFixed(1), origin: origin.label || t('list.yourPin') })}</p><p className="muted">{t('details.lastVerified', { date: dateLabel(selected.verified_at) })}</p>{isStale(selected.verified_at) && <p className="stale-note" role="note">{t('fresh.staleNote')}</p>}<p>{selected.description || t('details.noDetails')}</p>{selected.capacity != null && <p>{t('details.capacity')} <strong>{selected.capacity}</strong> · {t('details.spacesUnknown')}</p>}<details><summary>{t('details.coordinates')}</summary><p>{Number(selected.lat).toFixed(4)}, {Number(selected.lng).toFixed(4)}</p></details><div className="card-actions">{selected.contact_phone && <a className="call-button primary-call" href={`tel:${selected.contact_phone.replace(/[^+\d]/g, '')}`}><MapIcon name="phone" />{t('details.call')}</a>}{selected.type !== 'hazard' && <button className={selected.contact_phone ? '' : 'primary'} disabled={routing} onClick={() => routeTo(selected)}><MapIcon name="route" />{t('details.directions')}</button>}</div></section>}
       {notice && <div className="map-toast" role="status">{notice}<button onClick={() => setNotice('')} aria-label={t('notice.dismiss')}>×</button></div>}

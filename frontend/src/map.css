@@ -73,3 +73,14 @@
 /* Offline map status in the menu */
 .offline-map-note { display:flex; gap:6px; align-items:flex-start; margin:10px 0; font-size:12px; line-height:1.45; color:#1f5f35; }
 .offline-map-note .map-icon, .offline-map-note svg { flex:0 0 16px; width:16px; height:16px; }
+
+/* Directions card: tap the summary or the arrow to fold it to one line, so the route on the map stays visible. */
+.lifeline-map .route-summary { flex:1; min-width:0; min-height:0; display:flex; flex-direction:column; align-items:flex-start; justify-content:center; gap:2px; margin:0; padding:2px 0; background:none; border:0; text-align:left; color:inherit; }
+.lifeline-map .route-summary:hover { background:none; }
+.lifeline-map .route-summary .route-walk { font-size:13px; font-weight:600; }
+.lifeline-map .route-fold,.lifeline-map .route-x { flex:none; width:40px; min-height:40px; height:40px; margin:0; padding:0; border-radius:6px!important; color:#1b2430; }
+.route-fold svg { width:18px; height:18px; transition:transform .2s; }
+.route-result.open .route-fold svg { transform:rotate(180deg); }
+.lifeline-map .route-x { font-size:22px; font-weight:500; line-height:1; }
+.route-result.folded { padding:10px 12px; }
+.route-result.folded .route-danger,.route-result.folded .warning { margin:8px 0 0; }
