@@ -10,8 +10,10 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@protomaps/basemaps": "^5.7.2",
     "dexie": "^4.4.4",
     "leaflet": "^1.9.4",
+    "protomaps-leaflet": "^5.1.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-router-dom": "^7.18.1"

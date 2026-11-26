@@ -38,6 +38,6 @@ The browser supplies an estimate, not a guaranteed GPS fix. A laptop may have a 
 ## Claims to keep precise
 
 - Built: resource discovery, reporting, coordinator review, saved resources, queued reports with retry deduplication, road-route hazard checks.
-- Offline: cached application, saved resources, previously viewed map tiles, report storage, and directions. While online the app quietly saves road routes from the person to the nearest place of each kind (and every route they open). Offline, Directions uses a saved road route that starts within 1.5 km; otherwise it shows a compass direction, straight-line distance and walking time, clearly labelled as not a road.
+- Offline: cached application, saved resources, the full street map of Idoma land (6.5 MB, saved automatically on the first visit, sharp at every zoom, including places never viewed), report storage, and directions. While online the app quietly saves road routes from the person to the nearest place of each kind (and every route they open). Offline, Directions uses a saved road route that starts within 1.5 km; otherwise it shows a compass direction, straight-line distance and walking time, clearly labelled as not a road.
 - Simulated: sample resource availability, SMS/USSD gateway interactions. Real place names do not establish real facility availability.
 - Next: field validation, live telecom integration, operational verification/expiry policies, deployment hardening. Do not claim measured impact or signed partners without evidence.

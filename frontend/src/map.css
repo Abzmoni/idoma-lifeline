@@ -69,3 +69,7 @@
 .route-result.danger .route-tile { background:#b73333; }
 .route-arrow { display:inline-block; font-size:22px; font-weight:800; line-height:1; }
 .route-result.danger .route-head strong { color:#9a3520; }
+
+/* Offline map status in the menu */
+.offline-map-note { display:flex; gap:6px; align-items:flex-start; margin:10px 0; font-size:12px; line-height:1.45; color:#1f5f35; }
+.offline-map-note .map-icon, .offline-map-note svg { flex:0 0 16px; width:16px; height:16px; }

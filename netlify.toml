@@ -12,3 +12,10 @@
   for = "/sw.js"
   [headers.values]
     Cache-Control = "no-cache"
+
+# The offline map file has its build date in the name and never changes.
+[[headers]]
+  for = "/map/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+    Content-Type = "application/octet-stream"

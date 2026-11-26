@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import L from 'leaflet';
+import { addBaseMap, saveOfflineMap, offlineMapState, onOfflineMapChange, MAP_BYTES } from '../offlineMap';
 import { api, syncOfflineReports, getDataStatus, getCachedResources, connectionUsable, isServerReachable } from '../api';
 import db from '../db';
 import { locate, quickLocate, lastKnownLocation, locationPermission, accuracyLabel, ageParts, usableFix, inServiceArea, kmFromOtukpo, PRECISE_LOCATION_METERS } from '../location';
@@ -54,6 +55,9 @@ export default function MapPage() {
   const [pending, setPending] = useState(0), [syncing, setSyncing] = useState(false), [notice, setNotice] = useState('');
   const [queueError, setQueueError] = useState('');
   const [menu, setMenu] = useState(false);
+  const [offlineMap, setOfflineMap] = useState(offlineMapState());
+  // Save the whole Idoma map on this device shortly after the first visit, so every street works offline.
+  useEffect(() => { const stop = onOfflineMapChange(setOfflineMap); const timer = setTimeout(() => saveOfflineMap(), 3000); return () => { stop(); clearTimeout(timer); }; }, []);
   const [start, setStart] = useState('otukpo'), [end, setEnd] = useState('apa');
   const [location, setLocation] = useState(null), [confirmed, setConfirmed] = useState(false), [picking, setPicking] = useState(false);
   const [locating, setLocating] = useState(false), [locationMessage, setLocationMessage] = useState('');
@@ -99,7 +103,7 @@ export default function MapPage() {
 
   useEffect(() => {
     map.current = L.map(mapNode.current, { zoomControl: false }).setView([7.1904, 8.1345], 12);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }).addTo(map.current);
+    addBaseMap(map.current);
     L.control.zoom({ position: 'bottomright' }).addTo(map.current);
     markers.current = L.layerGroup().addTo(map.current);
     locationLayer.current = L.layerGroup().addTo(map.current);
@@ -288,7 +292,7 @@ export default function MapPage() {
         <button className="icon-button" aria-label="More options" title={t('nav.more')} aria-expanded={menu} onClick={() => setMenu(!menu)}><MapIcon name="more" /></button>
       </div>
     </header>
-    {menu && <aside className="map-menu"><strong>{t('menu.title')}</strong><p className="muted">{status.updatedAt ? t('menu.updated', { date: dateLabel(status.updatedAt) }) : t('menu.waiting')}</p><button onClick={demo}><MapIcon name="map" />{t('menu.demo')}</button><button onClick={placePin}><MapIcon name="pin" />{t('menu.pin')}</button><button onClick={sync} disabled={offline || syncing}>{t(syncing ? 'menu.syncing' : 'menu.sync')}</button>{LANGUAGES.length > 1 && <div className="menu-languages" role="group" aria-label={t('nav.language')}>{LANGUAGES.map(([code, name]) => <button key={code} className={lang === code ? 'active' : ''} aria-pressed={lang === code} onClick={() => setLanguage(code)}>{name}</button>)}</div>}<p className="muted">{t('menu.prototype')}<br />{t('menu.simulated')}</p></aside>}
+    {menu && <aside className="map-menu"><strong>{t('menu.title')}</strong><p className="muted">{status.updatedAt ? t('menu.updated', { date: dateLabel(status.updatedAt) }) : t('menu.waiting')}</p>{offlineMap.status === 'saved' ? <p className="offline-map-note"><MapIcon name="check" />{t('map.saved', { mb: (MAP_BYTES / 1e6).toFixed(1) })}</p> : offlineMap.status === 'saving' ? <p className="offline-map-note">{t('map.saving', { pct: Math.round(offlineMap.progress * 100) })}</p> : <button onClick={() => saveOfflineMap({ force: true })} disabled={offline}><MapIcon name="map" />{t('map.save', { mb: (MAP_BYTES / 1e6).toFixed(1) })}</button>}<button onClick={demo}><MapIcon name="map" />{t('menu.demo')}</button><button onClick={placePin}><MapIcon name="pin" />{t('menu.pin')}</button><button onClick={sync} disabled={offline || syncing}>{t(syncing ? 'menu.syncing' : 'menu.sync')}</button>{LANGUAGES.length > 1 && <div className="menu-languages" role="group" aria-label={t('nav.language')}>{LANGUAGES.map(([code, name]) => <button key={code} className={lang === code ? 'active' : ''} aria-pressed={lang === code} onClick={() => setLanguage(code)}>{name}</button>)}</div>}<p className="muted">{t('menu.prototype')}<br />{t('menu.simulated')}</p></aside>}
     {(offline || (status.cached && status.updatedAt) || pending > 0 || queueError) && <div className="data-strip" role="status">
       <span>{offline ? t('strip.offline') : status.cached ? t('strip.cached') : ''}</span>
       {pending > 0 && <span>{t(pending === 1 ? 'strip.pendingOne' : 'strip.pendingMany', { n: pending })}</span>}

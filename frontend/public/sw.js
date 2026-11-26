@@ -4,13 +4,15 @@ const ASSETS = /* __PRECACHE__ */ ['/', '/index.html', '/manifest.json', '/favic
 const TILES = 'lifeline-visited-tiles-v2';
 // Google Fonts (text and the Material Symbols icon font). Without these offline, icons render as raw words.
 const FONTS = 'lifeline-fonts-v1';
+// The offline map file (saved by the page, see src/offlineMap.js). Kept across app updates.
+const MAP = 'lifeline-offline-map';
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(VERSION).then(cache => cache.addAll(ASSETS)));
 });
 self.addEventListener('activate', event => {
   event.waitUntil((async () => {
     for (const key of await caches.keys()) {
-      if ((key.startsWith('lifeline-') || key.startsWith('idoma-lifeline-')) && key !== VERSION && key !== TILES && key !== FONTS) await caches.delete(key);
+      if ((key.startsWith('lifeline-') || key.startsWith('idoma-lifeline-')) && key !== VERSION && key !== TILES && key !== FONTS && key !== MAP) await caches.delete(key);
     }
     await self.clients.claim();
   })());
@@ -35,6 +37,34 @@ function savedFirst(event, cacheName, store, fallback) {
     try { return await network; } catch { return fallback(); }
   })());
 }
+// The map library reads the map file in small byte ranges. Serve those from the saved copy when there is
+// one (offline or not: it is faster and costs no data). The file name is dated and never changes, so
+// version tags are dropped to keep saved and network copies interchangeable.
+let mapFile = null; // { url, blob }
+async function savedMap(url) {
+  if (mapFile?.url === url) return mapFile.blob;
+  const saved = await (await caches.open(MAP)).match(url);
+  if (!saved) return null;
+  mapFile = { url, blob: await saved.blob() };
+  return mapFile.blob;
+}
+function withoutVersionTags(response) {
+  const headers = new Headers(response.headers);
+  headers.delete('ETag'); headers.delete('Last-Modified');
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+}
+async function mapResponse(request) {
+  const url = new URL(request.url); url.search = '';
+  const blob = await savedMap(url.href);
+  if (!blob) return withoutVersionTags(await fetch(request));
+  const range = /bytes=(\d+)-(\d*)/.exec(request.headers.get('Range') || '');
+  if (!range) return new Response(blob, { headers: { 'Content-Type': 'application/octet-stream', 'Content-Length': String(blob.size), 'Accept-Ranges': 'bytes' } });
+  const start = Number(range[1]), end = Math.min(range[2] ? Number(range[2]) : blob.size - 1, blob.size - 1);
+  if (start >= blob.size) return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${blob.size}` } });
+  return new Response(blob.slice(start, end + 1), { status: 206, headers: {
+    'Content-Type': 'application/octet-stream', 'Content-Range': `bytes ${start}-${end}/${blob.size}`,
+    'Content-Length': String(end - start + 1), 'Accept-Ranges': 'bytes' } });
+}
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
   if (event.request.method !== 'GET' || url.pathname.startsWith('/api/')) return;
@@ -53,6 +83,7 @@ self.addEventListener('fetch', event => {
     return;
   }
   if (url.origin !== self.location.origin) return;
+  if (url.pathname.startsWith('/map/') && url.pathname.endsWith('.pmtiles')) { event.respondWith(mapResponse(event.request)); return; }
   event.respondWith((async () => {
     const cache = await caches.open(VERSION);
     if (event.request.mode === 'navigate') return await cache.match('/index.html') || fetch(event.request);

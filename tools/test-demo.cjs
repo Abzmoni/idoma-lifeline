@@ -92,7 +92,7 @@ async function api(endpoint, data, token) {
   await page.getByRole('button', { name: 'List view', exact: true }).click();
   await page.locator('.resource-row').first().click();
   await page.locator('.resource-details').waitFor();
-  await page.waitForFunction(() => [...document.querySelectorAll('.leaflet-tile')].some(img => img.complete && img.naturalWidth === 256));
+  await page.waitForFunction(() => document.querySelectorAll('.leaflet-tile-loaded').length > 0);
   await page.screenshot({ path: path.join(__dirname, 'artifacts/desktop.png') });
   const destinationName = await page.locator('.resource-details h2').innerText();
   // Deterministic road provider: this geometry passes a verified hazard and cannot avoid it.
@@ -181,11 +181,11 @@ async function api(endpoint, data, token) {
   console.log('PASS coordinator browser: map initialization, report approval, public resource visibility');
   await reopened.setViewportSize({ width: 390, height: 844 });
   if (await reopened.getByRole('button', { name: 'Dismiss notification' }).count()) await reopened.getByRole('button', { name: 'Dismiss notification' }).click();
-  await reopened.waitForFunction(() => [...document.querySelectorAll('.leaflet-tile')].filter(img => img.complete && img.naturalWidth === 256 && Number(getComputedStyle(img).opacity) === 1).length >= 4);
+  await reopened.waitForFunction(() => [...document.querySelectorAll('.leaflet-tile-loaded')].filter(tile => Number(getComputedStyle(tile).opacity) === 1).length >= 4);
   await reopened.screenshot({ path: path.join(__dirname, 'artifacts/mobile.png') });
   await reopened.getByRole('button', { name: 'List view', exact: true }).click();
   await reopened.locator('.resource-row').first().click();
-  await reopened.waitForFunction(() => !document.querySelector('.leaflet-zoom-anim') && [...document.querySelectorAll('.leaflet-tile')].filter(img => img.complete && img.naturalWidth === 256 && Number(getComputedStyle(img).opacity) === 1).length >= 4);
+  await reopened.waitForFunction(() => !document.querySelector('.leaflet-zoom-anim') && [...document.querySelectorAll('.leaflet-tile-loaded')].filter(tile => Number(getComputedStyle(tile).opacity) === 1).length >= 4);
   await reopened.screenshot({ path: path.join(__dirname, 'artifacts/mobile-card.png') });
   assert.equal(await reopened.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
   assert.deepEqual(errors, []);
@@ -279,6 +279,34 @@ async function api(endpoint, data, token) {
   } finally { await dead.close(); sink.close(); }
   assert.deepEqual(errors, []);
   console.log('PASS dead network (says online, nothing answers): saved places at once, instant directions, report saved within seconds');
+
+  // Full offline map: saved on the first visit, then any street in Idoma land works offline at any zoom,
+  // including towns never looked at while online.
+  const mapContext = await browser.newContext({ viewport: { width: 390, height: 780 } });
+  const mapPage = await mapContext.newPage(); mapPage.on('pageerror', e => errors.push(e.message));
+  await mapPage.goto(base);
+  await mapPage.evaluate(async () => { await navigator.serviceWorker.ready; });
+  await mapPage.reload();
+  await mapPage.waitForFunction(() => navigator.serviceWorker.controller && document.querySelectorAll('.resource-pin').length >= 10);
+  await mapPage.waitForFunction(async () => Boolean(await (await caches.open('lifeline-offline-map')).match('/map/idoma-20261125.pmtiles')), null, { timeout: 30000, polling: 500 });
+  await mapPage.getByRole('button', { name: 'More options' }).click();
+  await mapPage.getByText(/Offline map saved \(6\.5 MB\)/).waitFor();
+  await mapPage.getByRole('button', { name: 'More options' }).click();
+  await mapContext.setOffline(true);
+  await mapPage.reload();
+  await mapPage.waitForFunction(() => document.querySelectorAll('.resource-pin').length >= 10);
+  await mapPage.getByRole('button', { name: 'List view', exact: true }).click();
+  await mapPage.locator('.resource-row', { hasText: 'Agatu Peace Zone' }).click(); // ~80 km away: never viewed online
+  await mapPage.locator('.resource-details').getByRole('button', { name: 'Close' }).click();
+  for (let i = 0; i < 3; i++) { await mapPage.locator('.leaflet-control-zoom-in').click(); await delay(500); }
+  await mapPage.waitForFunction(() => !document.querySelector('.leaflet-zoom-anim') && document.querySelectorAll('.leaflet-tile').length > 0
+    && document.querySelectorAll('.leaflet-tile-loaded').length === document.querySelectorAll('.leaflet-tile').length, null, { timeout: 15000 });
+  const ranges = await mapPage.evaluate(async () => (await fetch('/map/idoma-20261125.pmtiles', { headers: { Range: 'bytes=0-126' } })).status);
+  assert.equal(ranges, 206);
+  await mapPage.screenshot({ path: path.join(__dirname, 'artifacts/offline-map-street-zoom.png') });
+  await mapContext.close();
+  assert.deepEqual(errors, []);
+  console.log('PASS full offline map: saved on first visit, street zoom offline in a town never viewed online');
 })().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => {
   if (browser) await browser.close();
   if (server) server.kill();

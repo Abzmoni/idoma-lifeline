@@ -46,8 +46,7 @@ async function press(locator, ms = 650) {
   await locator.evaluate(el => { el.style.outline = ''; });
   await locator.click();
 }
-const tilesReady = page => page.waitForFunction(() => [...document.querySelectorAll('.leaflet-tile')]
-  .filter(img => img.complete && img.naturalWidth === 256).length >= 6, null, { timeout: 20000 }).catch(() => {});
+const tilesReady = page => page.waitForFunction(() => document.querySelectorAll('.leaflet-tile-loaded').length >= 6, null, { timeout: 20000 }).catch(() => {});
 
 (async () => {
   fs.rmSync(outDir, { recursive: true, force: true });
@@ -108,7 +107,7 @@ const tilesReady = page => page.waitForFunction(() => [...document.querySelector
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.getByText(/Offline · Saved information/).waitFor();
     await tilesReady(page);
-    await caption(page, 'Reloaded with no connection: the app, saved resources and viewed map areas still work.', 4500);
+    await caption(page, 'Reloaded with no connection: the app, saved places and the full street map of Idoma land all still work.', 4500);
     await press(page.locator('.need-filters').getByRole('button', { name: 'Medical' }));
     await press(page.locator('.resource-row').first());
     await press(page.locator('.resource-details').getByRole('button', { name: 'Directions', exact: true }));

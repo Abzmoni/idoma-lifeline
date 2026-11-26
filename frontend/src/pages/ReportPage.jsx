@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import L from 'leaflet';
+import { addBaseMap } from '../offlineMap';
 import { api, connectionUsable } from '../api';
 import MapIcon, { iconMarkup } from '../components/MapIcon';
 import Signal from '../components/Signal';
@@ -63,7 +64,7 @@ export default function ReportPage() {
   useEffect(() => {
     if (step !== 2 || !mapNode.current) return;
     const instance = L.map(mapNode.current, { zoomControl: true }).setView(DEFAULT_CENTRE, 12);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }).addTo(instance);
+    addBaseMap(instance);
     const color = (TYPES.find(([id]) => id === type) || TYPES[0])[1];
     const icon = L.divIcon({ className: 'resource-pin report-pin', html: `<span style="background:${color}">${iconMarkup(type || 'pin')}</span><i style="border-top-color:${color}"></i>`, iconSize: [44, 54], iconAnchor: [22, 54] });
     const moveTo = (lat, lng) => { userMoved.current = true; setPlace({ lat, lng, source: 'map' }); };
