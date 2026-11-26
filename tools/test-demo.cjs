@@ -8,6 +8,11 @@ const root = path.resolve(__dirname, '..');
 const base = 'http://127.0.0.1:3107';
 const delay = ms => new Promise(r => setTimeout(r, ms));
 let server, browser;
+// waitForFunction treats an async predicate's Promise as truthy and returns at once, so poll explicitly.
+async function until(page, fn, timeout = 30000) {
+  const end = Date.now() + timeout;
+  while (!(await page.evaluate(fn))) { if (Date.now() > end) throw new Error('Timed out waiting for: ' + fn); await delay(300); }
+}
 async function api(endpoint, data, token) {
   const response = await fetch(base + endpoint, { method: data ? 'POST' : 'GET', headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) }, ...(data ? { body: JSON.stringify(data) } : {}) });
   const result = await response.json();
@@ -73,7 +78,7 @@ async function api(endpoint, data, token) {
   await page.evaluate(async () => { await navigator.serviceWorker.ready; });
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(navigator.serviceWorker.controller));
-  await page.waitForFunction(async () => (await (await caches.open('lifeline-visited-tiles-v2')).keys()).length > 0);
+  await until(page, async () => Boolean(await (await caches.open('lifeline-offline-map')).match('/map/idoma-20261125.pmtiles')));
   // Location should not have been requested automatically.
   await page.screenshot({ path: path.join(__dirname, 'artifacts/map-home.png') });
   assert.equal(await page.locator('.location-notice').count(), 0);
@@ -288,7 +293,7 @@ async function api(endpoint, data, token) {
   await mapPage.evaluate(async () => { await navigator.serviceWorker.ready; });
   await mapPage.reload();
   await mapPage.waitForFunction(() => navigator.serviceWorker.controller && document.querySelectorAll('.resource-pin').length >= 10);
-  await mapPage.waitForFunction(async () => Boolean(await (await caches.open('lifeline-offline-map')).match('/map/idoma-20261125.pmtiles')), null, { timeout: 30000, polling: 500 });
+  await until(mapPage, async () => Boolean(await (await caches.open('lifeline-offline-map')).match('/map/idoma-20261125.pmtiles')), 30000);
   await mapPage.getByRole('button', { name: 'More options' }).click();
   await mapPage.getByText(/Offline map saved \(6\.5 MB\)/).waitFor();
   await mapPage.getByRole('button', { name: 'More options' }).click();
@@ -307,6 +312,34 @@ async function api(endpoint, data, token) {
   await mapContext.close();
   assert.deepEqual(errors, []);
   console.log('PASS full offline map: saved on first visit, street zoom offline in a town never viewed online');
+
+  // Slow or dropped mobile data: the download is cut off part-way, the app is reopened, and it resumes
+  // from the pieces already kept instead of starting the 6.5 MB again.
+  const resumeContext = await browser.newContext({ viewport: { width: 390, height: 780 } });
+  const pieceRequests = [];
+  let allowPieces = 4;
+  await resumeContext.route('**/map/idoma-20261125.pmtiles', route => {
+    const range = route.request().headers().range || '';
+    if (!/^bytes=\d+-\d+$/.test(range) || !range.endsWith(String(Math.min(6531223, (Number(range.split('=')[1].split('-')[0]) / 524288 + 1) * 524288) - 1))) return route.continue();
+    pieceRequests.push(range);
+    if (allowPieces-- > 0) return route.continue();
+    return route.abort('internetdisconnected');
+  });
+  const resumePage = await resumeContext.newPage(); resumePage.on('pageerror', e => errors.push(e.message));
+  await resumePage.goto(base);
+  await until(resumePage, async () => (await (await caches.open('lifeline-offline-map-parts')).keys()).length >= 4, 30000);
+  await delay(1500);
+  const firstRun = pieceRequests.length;
+  allowPieces = 1000; pieceRequests.length = 0;
+  await resumePage.reload();
+  await until(resumePage, async () => Boolean(await (await caches.open('lifeline-offline-map')).match('/map/idoma-20261125.pmtiles')), 30000);
+  const total = Math.ceil(6531223 / 524288);
+  assert.ok(pieceRequests.length <= total - 4, `resumed download fetched ${pieceRequests.length} of ${total} pieces again`);
+  assert.equal(await resumePage.evaluate(async () => (await caches.keys()).includes('lifeline-offline-map-parts')), false);
+  assert.equal(await resumePage.evaluate(async () => (await (await (await caches.open('lifeline-offline-map')).match('/map/idoma-20261125.pmtiles')).blob()).size), 6531223);
+  await resumeContext.close();
+  assert.deepEqual(errors, []);
+  console.log(`PASS offline map download resumes after a dropped connection (${firstRun} pieces tried before the drop, ${pieceRequests.length} of ${total} fetched after)`);
 })().catch(error => { console.error(error); process.exitCode = 1; }).finally(async () => {
   if (browser) await browser.close();
   if (server) server.kill();

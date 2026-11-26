@@ -12,7 +12,7 @@ self.addEventListener('install', event => {
 self.addEventListener('activate', event => {
   event.waitUntil((async () => {
     for (const key of await caches.keys()) {
-      if ((key.startsWith('lifeline-') || key.startsWith('idoma-lifeline-')) && key !== VERSION && key !== TILES && key !== FONTS && key !== MAP) await caches.delete(key);
+      if ((key.startsWith('lifeline-') || key.startsWith('idoma-lifeline-')) && key !== VERSION && key !== TILES && key !== FONTS && key !== MAP && key !== MAP + '-parts') await caches.delete(key);
     }
     await self.clients.claim();
   })());

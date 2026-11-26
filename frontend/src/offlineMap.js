@@ -56,12 +56,24 @@ export const MAP_BYTES = 6531223;
 export const MAP_CACHE = 'lifeline-offline-map';
 export const MAP_BOUNDS = [[6.55, 7.45], [8.2, 8.75]];
 
+const createLayer = () => leafletLayer({
+  url: MAP_URL, paintRules: mapPaintRules(), labelRules: labelRules(FLAVOR, 'en'), backgroundColor: FLAVOR.background,
+  maxDataZoom: 14, maxZoom: 19,
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · Protomaps',
+});
+// If the map file could not be read (offline before it was saved), the layer stays blank for good. So rebuild it
+// as soon as the map finishes saving or the connection returns, without the person having to reload.
 export function addBaseMap(map) {
-  return leafletLayer({
-    url: MAP_URL, paintRules: mapPaintRules(), labelRules: labelRules(FLAVOR, 'en'), backgroundColor: FLAVOR.background,
-    maxDataZoom: 14, maxZoom: 19,
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · Protomaps',
-  }).addTo(map);
+  let layer = createLayer().addTo(map), last = state.status;
+  const rebuild = () => {
+    if (!map.getContainer().isConnected) { stop(); window.removeEventListener('online', rebuild); return; }
+    const fresh = createLayer().addTo(map);
+    layer.remove(); layer = fresh;
+  };
+  const stop = onOfflineMapChange(next => { if (next.status === 'saved' && last !== 'saved') rebuild(); last = next.status; });
+  window.addEventListener('online', rebuild);
+  map.on('unload', () => { stop(); window.removeEventListener('online', rebuild); });
+  return layer;
 }
 
 // ---- Saving the map on this device ----------------------------------------------------------
@@ -75,6 +87,27 @@ async function isSaved() {
   try { return Boolean(await (await caches.open(MAP_CACHE)).match(MAP_URL)); } catch { return false; }
 }
 
+// Downloaded in 512 KB pieces, each kept as soon as it arrives, so a slow or dropped connection, a reload or a
+// closed app resumes where it stopped instead of starting the 6.5 MB again. Pieces are joined once all are in.
+const PART_BYTES = 512 * 1024;
+const PARTS_CACHE = MAP_CACHE + '-parts';
+const partKey = i => `${MAP_URL}?part=${i}`;
+async function fetchPart(i, total) {
+  const start = i * PART_BYTES, end = Math.min(total, start + PART_BYTES) - 1;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const response = await fetch(MAP_URL, { headers: { Range: `bytes=${start}-${end}` }, cache: 'no-store', signal: AbortSignal.timeout(60000) });
+      const bytes = await response.arrayBuffer();
+      if (response.status === 206 && bytes.byteLength === end - start + 1) return bytes;
+      if (response.status === 200 && bytes.byteLength === total) return { whole: bytes }; // server ignored Range
+      throw new Error('Unexpected response ' + response.status);
+    } catch (error) {
+      if (attempt >= 3 || !navigator.onLine) throw error;
+      await new Promise(r => setTimeout(r, attempt * 2000));
+    }
+  }
+}
+
 let saving = null;
 // Download the map file once and keep it. Data Saver is respected unless the person asks explicitly.
 export function saveOfflineMap({ force = false } = {}) {
@@ -86,19 +119,21 @@ export function saveOfflineMap({ force = false } = {}) {
     if (!force && navigator.connection?.saveData) { set({ status: 'datasaver' }); return false; }
     set({ status: 'saving', progress: 0 });
     try {
-      const response = await fetch(MAP_URL, { cache: 'no-store' });
-      if (!response.ok || !response.body) throw new Error('HTTP ' + response.status);
-      const total = Number(response.headers.get('Content-Length')) || MAP_BYTES;
-      const reader = response.body.getReader(), chunks = [];
-      let received = 0;
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value); received += value.length;
-        set({ progress: Math.min(0.99, received / total) });
+      const parts = await caches.open(PARTS_CACHE), total = MAP_BYTES, count = Math.ceil(total / PART_BYTES);
+      const pieces = [];
+      for (let i = 0; i < count; i++) {
+        const kept = await parts.match(partKey(i));
+        let bytes = kept ? await kept.arrayBuffer() : await fetchPart(i, total);
+        if (bytes.whole) { pieces.length = 0; pieces.push(bytes.whole); break; }
+        if (!kept) await parts.put(partKey(i), new Response(bytes));
+        pieces.push(bytes);
+        set({ progress: Math.min(0.99, (i + 1) / count) });
       }
+      const blob = new Blob(pieces);
+      if (blob.size !== total) throw new Error('Incomplete map file');
       const cache = await caches.open(MAP_CACHE);
-      await cache.put(MAP_URL, new Response(new Blob(chunks), { headers: { 'Content-Type': 'application/octet-stream', 'Content-Length': String(received) } }));
+      await cache.put(MAP_URL, new Response(blob, { headers: { 'Content-Type': 'application/octet-stream', 'Content-Length': String(blob.size) } }));
+      await caches.delete(PARTS_CACHE);
       for (const old of await cache.keys()) if (!old.url.endsWith(MAP_URL)) await cache.delete(old);
       try { await navigator.storage?.persist?.(); } catch { /* best effort: ask the browser not to evict it */ }
       set({ status: 'saved', progress: 1 });
